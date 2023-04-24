@@ -378,7 +378,7 @@ def main():
         print_trainable_parameters(model)
 
     # Training on multi-gpus
-    model = nn.DataParallel(model)
+    # model = nn.DataParallel(model) # ERROR: Fix later
 
     # Load dataset
     data = load_dataset("json", data_files=args.data_path, split="train")
