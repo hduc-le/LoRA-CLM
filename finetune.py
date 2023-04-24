@@ -143,7 +143,6 @@ def train_one(model, optimizer, train_loader, device):
     loss_sum = 0
     for batch_idx, batch in enumerate(train_loader):
         # Load data to device
-        assert isinstance(batch, dict), f"The input batch is required as a dictionary, but was received as `{type(batch)}"
         batch = batch_to_device(batch, device=device)
         # Zero out gradients for optimizer
         optimizer.zero_grad()
@@ -171,7 +170,6 @@ def test_one(model, test_loader, device):
     all_loss = []
     for batch_idx, batch in enumerate(test_loader):
         # Load data to device
-        assert isinstance(batch, dict), f"The input batch is required as a dictionary, but was received as `{type(batch)}"
         batch = batch_to_device(batch, device=device)
 
         with torch.no_grad():
