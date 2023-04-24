@@ -53,6 +53,7 @@ def parse_args():
 
     # training config
     parser.add_argument('--lora_finetune', type=bool, default=True, help="set to False for normally fine-tuning.")
+    parser.add_argument('--load_8bit', type=bool, default=False, help="load model in 8bit.")
     parser.add_argument('--num_epochs', type=int, default=5)
     parser.add_argument('--save_model', type=int, default=1, help="save model everywhen val loss is improved.")
     parser.add_argument('--save_best', type=bool, default=True, help="restore and save the best model at the end of training.")
@@ -125,12 +126,13 @@ def load_peft_model(
 def get_model_tokenizer(
         pretrained_model_name_or_path: str = DEFAULT_INPUT_MODEL,
         *,
+        load_in_8bit: bool = False,
         gradient_checkpointing: bool = False,
     ) -> Tuple[AutoModelForCausalLM, PreTrainedTokenizer]:
 
     tokenizer = load_tokenizer(pretrained_model_name_or_path)
     model = load_model(
-        pretrained_model_name_or_path, gradient_checkpointing=gradient_checkpointing
+        pretrained_model_name_or_path, load_in_8bit=load_in_8bit, gradient_checkpointing=gradient_checkpointing
     )
     model.resize_token_embeddings(len(tokenizer))
     return model, tokenizer
@@ -147,9 +149,10 @@ def train_one(model, optimizer, train_loader, device):
         # Zero out gradients for optimizer
         optimizer.zero_grad()
         # Run model
-        output = model(**batch)
-        # Save loss
-        loss = output.loss
+        with torch.autocast("cuda"):
+            output = model(**batch)
+            # Save loss
+            loss = output.loss
         # Backprop
         loss.backward()
         # Update params
@@ -172,14 +175,13 @@ def test_one(model, test_loader, device):
         # Load data to device
         batch = batch_to_device(batch, device=device)
 
-        with torch.no_grad():
+        with torch.no_grad(), torch.autocast("cuda"):
             # Run model
             output = model(**batch)
-
             loss = output.loss
-            all_loss.append(loss.item())
 
-            test_loader.set_postfix(loss=loss.item())
+        all_loss.append(loss.item())
+        test_loader.set_postfix(loss=loss.item())
 
     # Report overall test performance
     avg_loss = np.mean(all_loss)
@@ -204,11 +206,18 @@ def train(
     is_peft_model = True if isinstance(model, PeftModel) else False
 
     LOG.info("Setting up optimizer...")
-    optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=args.learning_rate,
-        weight_decay=args.weight_decay,
-    )
+    if args.load_8bit:
+        optimizer = bnb.optim.Adam8bit(
+            model.parameters(), 
+            lr=args.learning_rate, 
+            betas=(0.9, 0.995)
+        )
+    else:
+        optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=args.learning_rate,
+            weight_decay=args.weight_decay,
+        )
 
     if args.lr_scheduler == "ExponentialLR":
         scheduler = torch.optim.lr_scheduler.ExponentialLR(
@@ -352,7 +361,7 @@ def main():
     args = parse_args()
 
     # Load model and tokenizer
-    model, tokenizer = get_model_tokenizer(args.model_name_or_path)
+    model, tokenizer = get_model_tokenizer(args.model_name_or_path, load_in_8bit=args.load_8bit)
 
     if args.lora_finetune:
         # Peft model
