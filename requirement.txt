@@ -1,0 +1,10 @@
+accelerate>=0.12.0 
+transformers[torch]==4.25.1
+datasets 
+loralib 
+sentencepiece
+git+https://github.com/huggingface/peft.git
+bitsandbytes
+gdown
+colorlog
+termcolor
