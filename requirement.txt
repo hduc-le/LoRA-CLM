@@ -9,3 +9,4 @@ bitsandbytes
 gdown
 colorlog
 termcolor
+lightning

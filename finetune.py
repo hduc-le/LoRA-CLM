@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import time
 import torch
@@ -13,7 +14,7 @@ from transformers import (
     PreTrainedTokenizer,
 )
 from torch.utils.data import RandomSampler, SequentialSampler, DataLoader
-from datasets import load_dataset
+from datasets import load_dataset, DatasetDict
 from peft import (
     prepare_model_for_int8_training,
     LoraConfig,
@@ -24,18 +25,11 @@ from peft import (
 from typing import Tuple, Union, Dict
 from consts import (
     LOG,
-    DEFAULT_SEED,
-    DEFAULT_INPUT_MODEL,
-    END_KEY,
-    INSTRUCTION_KEY,
-    RESPONSE_KEY,
-    RESPONSE_KEY_NL,
+    DEFAULT_SEED
 )
 from termcolor import colored
+from helpers import load_model, load_peft_model, load_tokenizer, get_model_tokenizer
 from utils import generate_prompt, print_trainable_parameters, batch_to_device
-
-import os
-os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 # %% 
 def parse_args():
@@ -76,68 +70,7 @@ def parse_args():
 
     return parser.parse_args()
 
-# %%
-def load_tokenizer(
-        pretrained_model_name_or_path: str = DEFAULT_INPUT_MODEL,
-    ) -> PreTrainedTokenizer:
-    
-    LOG.info(f"Loading tokenizer for {pretrained_model_name_or_path}")
-    tokenizer = AutoTokenizer.from_pretrained(
-        pretrained_model_name_or_path, padding_side="left"
-    )
-    tokenizer.pad_token_id = 0  # unk. we want this to be different from the eos token
-    tokenizer.add_special_tokens(
-        {"additional_special_tokens": [END_KEY, INSTRUCTION_KEY, RESPONSE_KEY, RESPONSE_KEY_NL]}
-    )
-    return tokenizer
-
-
-def load_model(
-        pretrained_model_name_or_path: str = DEFAULT_INPUT_MODEL,
-        *,
-        load_in_8bit: bool = False,
-        gradient_checkpointing: bool = False,
-    ) -> AutoModelForCausalLM:
-    
-    LOG.info(f"Loading model for {pretrained_model_name_or_path}")
-    model = AutoModelForCausalLM.from_pretrained(
-        pretrained_model_name_or_path,
-        trust_remote_code=True,
-        use_cache=False if gradient_checkpointing else True,
-        torch_dtype=torch.bfloat16,
-        load_in_8bit=load_in_8bit,
-        device_map="auto",
-    )
-    return model
-
-
-def load_peft_model(
-        pretrained_model_name_or_path: str, 
-        peft_config: PeftConfig
-    ) -> PeftModel:
-
-    LOG.info(f"Loading peft model for {pretrained_model_name_or_path}")
-    peft_config = PeftConfig.from_pretrained(pretrained_model_name_or_path)
-    peft_model = load_model(peft_config.base_model_name_or_path)
-    peft_model = PeftModel.from_pretrained(peft_model, pretrained_model_name_or_path)
-    return peft_model
-
-
-def get_model_tokenizer(
-        pretrained_model_name_or_path: str = DEFAULT_INPUT_MODEL,
-        *,
-        load_in_8bit: bool = False,
-        gradient_checkpointing: bool = False,
-    ) -> Tuple[AutoModelForCausalLM, PreTrainedTokenizer]:
-
-    tokenizer = load_tokenizer(pretrained_model_name_or_path)
-    model = load_model(
-        pretrained_model_name_or_path, load_in_8bit=load_in_8bit, gradient_checkpointing=gradient_checkpointing
-    )
-    model.resize_token_embeddings(len(tokenizer))
-    return model, tokenizer
-
-
+# %% 
 def train_one(model, optimizer, train_loader, device):
     # Set to training mode
     model.train()
@@ -152,7 +85,7 @@ def train_one(model, optimizer, train_loader, device):
         with torch.autocast("cuda"):
             output = model(**batch)
             # Save loss
-            loss = output.loss
+            loss = output.loss.sum()
         # Backprop
         loss.backward()
         # Update params
@@ -178,7 +111,7 @@ def test_one(model, test_loader, device):
         with torch.no_grad(), torch.autocast("cuda"):
             # Run model
             output = model(**batch)
-            loss = output.loss
+            loss = output.loss.sum()
 
         all_loss.append(loss.item())
         test_loader.set_postfix(loss=loss.item())
@@ -189,12 +122,13 @@ def test_one(model, test_loader, device):
 
 
 def train(
-    args: argparse.ArgumentParser,
-    model: Union[PeftModel, AutoModelForCausalLM],
-    tokenizer: PreTrainedTokenizer,
-    train_loader: DataLoader,
-    val_loader: DataLoader,
-) -> None:
+        args: argparse.ArgumentParser,
+        model: Union[PeftModel, AutoModelForCausalLM],
+        tokenizer: PreTrainedTokenizer,
+        train_loader: DataLoader,
+        val_loader: DataLoader,
+        device: str = "cpu",
+    ) -> None:
     # creating a tmp directory to save the models at each epoch
     out_dir = os.path.abspath(
         os.path.join(os.path.curdir, "tmp-runs", str(int(time.time() * 1e7)))
@@ -206,7 +140,7 @@ def train(
     is_peft_model = True if isinstance(model, PeftModel) else False
 
     LOG.info("Setting up optimizer...")
-    if args.load_8bit:
+    if args.load_8bit:  # ERROR: Fix later
         optimizer = bnb.optim.Adam8bit(
             model.parameters(), 
             lr=args.learning_rate, 
@@ -229,7 +163,6 @@ def train(
     if is_peft_model and hasattr(model, "peft_config"):
         peft_config = model.peft_config["default"]
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
     min_val_loss = np.inf
@@ -341,7 +274,7 @@ def train(
             )
 
 
-def test(args, model, test_loader) -> None:
+def test(args, model, test_loader, device="cuda") -> None:
     LOG.info("Testing begins...")
     test_loader = tqdm(
             test_loader,
@@ -349,7 +282,6 @@ def test(args, model, test_loader) -> None:
             disable=not args.show_progress_bar,
             desc=colored(f"Testing on test", "yellow"),
         )
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # transfer model to cuda if not in cuda mode
     if not next(model.parameters()).is_cuda:
         model.to(device)
@@ -359,10 +291,11 @@ def test(args, model, test_loader) -> None:
 # %%
 def main():
     args = parse_args()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load model and tokenizer
     model, tokenizer = get_model_tokenizer(args.model_name_or_path, load_in_8bit=args.load_8bit)
-
+    
     if args.lora_finetune:
         # Peft model
         model = prepare_model_for_int8_training(model, use_gradient_checkpointing=True)
@@ -377,8 +310,8 @@ def main():
         model.config.use_cache = False
         print_trainable_parameters(model)
 
-    # Training on multi-gpus
-    # model = nn.DataParallel(model) # ERROR: Fix later
+    model = model.cuda()
+    model = nn.DataParallel(model)
 
     # Load dataset
     data = load_dataset("json", data_files=args.data_path, split="train")
@@ -389,28 +322,47 @@ def main():
             max_length=args.cutoff_len,
             padding="max_length",
         ),
-        remove_columns=["instruction", "input", "response"],
+        remove_columns=["instruction", "input", "response"]
     )
-    data = data.train_test_split(test_size=args.test_ratio, seed=DEFAULT_SEED)
+    # 90% train, 10% test + validation
+    train_testvalid = data.train_test_split(test_size=args.test_ratio, seed=DEFAULT_SEED)
+    # Split the 10% test + valid in half test, half valid
+    test_valid = train_testvalid['test'].train_test_split(test_size=0.5)
+    train_test_valid_dataset = DatasetDict({
+                                    'train': train_testvalid['train'],
+                                    'test': test_valid['test'],
+                                    'valid': test_valid['train']
+                                })
 
-    train_sampler = RandomSampler(data["train"])
-    val_sampler = SequentialSampler(data["test"])
+    train_sampler = RandomSampler(train_test_valid_dataset["train"])
+    val_sampler = SequentialSampler(train_test_valid_dataset["valid"])
+    test_sampler = SequentialSampler(train_test_valid_dataset["test"])
+
+    collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
     train_loader = DataLoader(
-        data["train"],
+        train_test_valid_dataset["train"],
         batch_size=args.train_bsz,
-        collate_fn=DataCollatorForLanguageModeling(tokenizer, mlm=False),
+        collate_fn=collator,
         sampler=train_sampler,
     )
 
     val_loader = DataLoader(
-        data["test"],
+        train_test_valid_dataset["valid"],
         batch_size=args.test_bsz,
-        collate_fn=DataCollatorForLanguageModeling(tokenizer, mlm=False),
+        collate_fn=collator,
         sampler=val_sampler,
     )
 
-    train(args, model, tokenizer, train_loader, val_loader)
+    test_loader = DataLoader(
+        train_test_valid_dataset["valid"],
+        batch_size=args.test_bsz,
+        collate_fn=collator,
+        sampler=test_sampler,
+    )
+
+    train(args, model, tokenizer, train_loader, val_loader, device)
+    test(args, model, test_loader, device)
 
 if __name__ == "__main__":
     main()
