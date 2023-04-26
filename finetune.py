@@ -123,7 +123,7 @@ def main():
     )
 
     test_dataloader = DataLoader(
-        train_test_valid_dataset["valid"],
+        train_test_valid_dataset["test"],
         batch_size=args.test_bsz,
         collate_fn=collator,
         sampler=test_sampler,
