@@ -49,12 +49,13 @@ def parse_args():
     parser.add_argument('--lora_alpha', type=int, default=16)
     parser.add_argument('--lora_dropout', type=float, default=0.05)
 
-    # Load the configuration file
-    with open("./config.yaml", "r") as f:
-        config = yaml.safe_load(f)
-
-    # Set default values for the parser arguments based on the configuration file
-    parser.set_defaults(**config)
+    if os.path.exists("config.yaml"):
+        # Load the configuration file
+        with open("config.yaml", "r") as f:
+            config = yaml.safe_load(f)
+        # Set default values for the parser arguments based on the configuration file
+        parser.set_defaults(**config)
+        
     return parser.parse_args()
 
 def main():
