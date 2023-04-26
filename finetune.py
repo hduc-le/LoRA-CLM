@@ -6,7 +6,7 @@ import torch.nn as nn
 import bitsandbytes as bnb
 import argparse
 from tqdm import tqdm
-
+from accelerate import Accelerator
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -29,14 +29,14 @@ from consts import (
 )
 from termcolor import colored
 from helpers import load_model, load_peft_model, load_tokenizer, get_model_tokenizer
-from utils import generate_prompt, print_trainable_parameters, batch_to_device
+from utils import generate_prompt, print_trainable_parameters
 
 # %% 
 def parse_args():
     parser = argparse.ArgumentParser(description='Training Arguments')
 
     # model config
-    parser.add_argument('--save_name', type=str)
+    parser.add_argument('--save_name', type=str, default="LoRA-CLM-fine-tune")
     parser.add_argument('--model_name_or_path', type=str, default="databricks/dolly-v2-3b")
 
     # optimizer config
@@ -71,47 +71,41 @@ def parse_args():
     return parser.parse_args()
 
 # %% 
-def train_one(model, optimizer, train_loader, device):
+def train_one(model, optimizer, train_dataloader, accelerator):
     # Set to training mode
     model.train()
     # Iterate over batches
     loss_sum = 0
-    for batch_idx, batch in enumerate(train_loader):
-        # Load data to device
-        batch = batch_to_device(batch, device=device)
+    for batch_idx, batch in enumerate(train_dataloader):
         # Zero out gradients for optimizer
         optimizer.zero_grad()
         # Run model
-        with torch.autocast("cuda"):
-            output = model(**batch)
-            # Save loss
-            loss = output.loss.sum()
+        output = model(**batch)
+        # Save loss
+        loss = output.loss
         # Backprop
-        loss.backward()
+        accelerator.backward(loss)
         # Update params
         optimizer.step()
         
         # Gather losses
         loss_sum += loss.item()
-        train_loader.set_postfix(loss=loss.item())
+        train_dataloader.set_postfix(loss=loss.item())
 
-    overall_loss = loss_sum / len(train_loader)
+    overall_loss = loss_sum / len(train_dataloader)
     return overall_loss
 
 
-def test_one(model, test_loader, device):
+def test_one(model, test_loader):
     # Set to eval mode
     model.eval()
     # Iterate over batches
     all_loss = []
     for batch_idx, batch in enumerate(test_loader):
-        # Load data to device
-        batch = batch_to_device(batch, device=device)
-
-        with torch.no_grad(), torch.autocast("cuda"):
+        with torch.no_grad():
             # Run model
             output = model(**batch)
-            loss = output.loss.sum()
+            loss = output.loss
 
         all_loss.append(loss.item())
         test_loader.set_postfix(loss=loss.item())
@@ -125,8 +119,8 @@ def train(
         args: argparse.ArgumentParser,
         model: Union[PeftModel, AutoModelForCausalLM],
         tokenizer: PreTrainedTokenizer,
-        train_loader: DataLoader,
-        val_loader: DataLoader,
+        train_dataloader: DataLoader,
+        eval_dataloader: DataLoader,
         device: str = "cpu",
     ) -> None:
     # creating a tmp directory to save the models at each epoch
@@ -163,7 +157,10 @@ def train(
     if is_peft_model and hasattr(model, "peft_config"):
         peft_config = model.peft_config["default"]
 
-    model.to(device)
+    accelerator = Accelerator()
+    train_dataloader, eval_dataloader, model, optimizer = accelerator.prepare(
+        train_dataloader, eval_dataloader, model, optimizer
+    )
 
     min_val_loss = np.inf
     sub_cycle = 0
@@ -171,25 +168,25 @@ def train(
     epoch_loss = {"train": [], "val": []}
     for epoch in range(1, args.num_epochs + 1):
         # Progress bar
-        train_loader = tqdm(
-            train_loader,
+        train_dataloader = tqdm(
+            train_dataloader,
             leave=True,
             disable=not args.show_progress_bar,
             desc=colored(f"Training on train - Epoch {epoch}", "blue"),
         )
         # Training
-        overall_train_loss = train_one(model, optimizer, train_loader, device)
+        overall_train_loss = train_one(model, optimizer, train_dataloader, accelerator)
         epoch_loss["train"].append(overall_train_loss)
         LOG.info("[Epoch: " + str(epoch) + "] " + "[Loss = " + "{:.4f}".format(overall_train_loss) + "] ")
         
         # Evaluation
-        val_loader = tqdm(
-            val_loader,
+        eval_dataloader = tqdm(
+            eval_dataloader,
             leave=True,
             disable=not args.show_progress_bar,
             desc=colored(f"Testing on evaluation - Epoch {epoch}", "yellow"),
         )
-        overall_val_loss = test_one(model, val_loader, device)
+        overall_val_loss = test_one(model, eval_dataloader, accelerator)
         epoch_loss["val"].append(overall_val_loss)
         LOG.info("[Test Summary] " + "[Loss = " + "{:.4f}".format(overall_val_loss) + "] ")
 
@@ -274,7 +271,7 @@ def train(
             )
 
 
-def test(args, model, test_loader, device="cuda") -> None:
+def test(args, model, test_loader, accelerator) -> None:
     LOG.info("Testing begins...")
     test_loader = tqdm(
             test_loader,
@@ -282,16 +279,12 @@ def test(args, model, test_loader, device="cuda") -> None:
             disable=not args.show_progress_bar,
             desc=colored(f"Testing on test", "yellow"),
         )
-    # transfer model to cuda if not in cuda mode
-    if not next(model.parameters()).is_cuda:
-        model.to(device)
     # Test model
-    test_one(model, test_loader, device)
+    test_one(model, test_loader, accelerator)
 
 # %%
 def main():
     args = parse_args()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load model and tokenizer
     model, tokenizer = get_model_tokenizer(args.model_name_or_path, load_in_8bit=args.load_8bit)
@@ -309,9 +302,6 @@ def main():
         model = get_peft_model(model, peft_config)
         model.config.use_cache = False
         print_trainable_parameters(model)
-
-    model = model.cuda()
-    model = nn.DataParallel(model)
 
     # Load dataset
     data = load_dataset("json", data_files=args.data_path, split="train")
@@ -335,23 +325,23 @@ def main():
                                 })
 
     train_sampler = RandomSampler(train_test_valid_dataset["train"])
-    val_sampler = SequentialSampler(train_test_valid_dataset["valid"])
+    eval_sampler = SequentialSampler(train_test_valid_dataset["valid"])
     test_sampler = SequentialSampler(train_test_valid_dataset["test"])
 
     collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
-    train_loader = DataLoader(
+    train_dataloader = DataLoader(
         train_test_valid_dataset["train"],
         batch_size=args.train_bsz,
         collate_fn=collator,
         sampler=train_sampler,
     )
 
-    val_loader = DataLoader(
+    eval_dataloader = DataLoader(
         train_test_valid_dataset["valid"],
         batch_size=args.test_bsz,
         collate_fn=collator,
-        sampler=val_sampler,
+        sampler=eval_sampler,
     )
 
     test_loader = DataLoader(
@@ -360,9 +350,9 @@ def main():
         collate_fn=collator,
         sampler=test_sampler,
     )
-
-    train(args, model, tokenizer, train_loader, val_loader, device)
-    test(args, model, test_loader, device)
+    
+    train(args, model, tokenizer, train_dataloader, eval_dataloader)
+    test(args, model, test_loader)
 
 if __name__ == "__main__":
     main()

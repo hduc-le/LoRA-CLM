@@ -1,6 +1,6 @@
-accelerate>=0.12.0
+accelerate
 deepspeed 
-transformers[torch]==4.25.1
+transformers
 datasets 
 loralib 
 sentencepiece
