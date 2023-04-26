@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import bitsandbytes as bnb
 import argparse
+import yaml
 from tqdm import tqdm
 from accelerate import Accelerator
 from transformers import (
@@ -67,6 +68,13 @@ def parse_args():
     parser.add_argument('--lora_r', type=int, default=4)
     parser.add_argument('--lora_alpha', type=int, default=16)
     parser.add_argument('--lora_dropout', type=float, default=0.05)
+
+    # Load the configuration file
+    with open("config.yaml", "r") as f:
+        config = yaml.safe_load(f)
+
+    # Set default values for the parser arguments based on the configuration file
+    parser.set_defaults(**config)
 
     return parser.parse_args()
 
