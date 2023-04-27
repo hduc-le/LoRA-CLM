@@ -26,11 +26,11 @@ accelerate config
 
 2. Perform fine-tuning.
 ```bash
-accelerate launch finetune.py
+accelerate launch finetune.py --config "config.yaml"
 ```
 
 ### With PyTorch-Lightning framework
 To fine-tune with `pytorch-lightning` framework, run the following command:
 ```bash
-python pl_finetune.py
+python pl_finetune.py --config "config.yaml"
 ```
