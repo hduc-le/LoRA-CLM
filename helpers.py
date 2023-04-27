@@ -2,9 +2,7 @@ import os
 import numpy as np
 import time
 import torch
-import torch.nn as nn
 import bitsandbytes as bnb
-import argparse
 from tqdm import tqdm
 from accelerate import Accelerator
 from transformers import (
@@ -15,16 +13,7 @@ from transformers import (
 from torch.utils.data import DataLoader
 from termcolor import colored
 from peft import PeftConfig, PeftModel
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    PreTrainedTokenizer,
-)
-from peft import (
-    PeftConfig,
-    PeftModel,
-)
-from typing import Tuple, Union, Dict
+from typing import Tuple, Union
 from consts import (
     LOG,
     DEFAULT_INPUT_MODEL,
@@ -67,8 +56,8 @@ def load_model(
         trust_remote_code=True,
         use_cache=False if gradient_checkpointing else True,
         torch_dtype=torch.bfloat16,
-        # load_in_8bit=load_in_8bit,
-        # device_map="auto",
+        # load_in_8bit=load_in_8bit,    # WARNING: uncomment this line may cause some unexpected errors during training, fix it later
+        # device_map="auto",            # WARNING: uncomment this line may cause some unexpected errors during training, fix it later
     )
     return model
 
@@ -158,7 +147,7 @@ def train(
     is_peft_model = True if isinstance(model, PeftModel) else False
 
     LOG.info("Setting up optimizer...")
-    if args.load_8bit:  # ERROR: Fix later
+    if args.load_8bit:                                              # WARNING: Fix later
         optimizer = bnb.optim.Adam8bit(
             model.parameters(), 
             lr=args.learning_rate, 
