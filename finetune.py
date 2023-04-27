@@ -10,8 +10,8 @@ from peft import (
     get_peft_model,
 )
 from consts import DEFAULT_SEED
-from helpers import TrainingArguments, get_model_tokenizer, train, test
-from utils import generate_prompt, print_trainable_parameters
+from train_utils import TrainingArguments, get_model_tokenizer, train, test
+from data_utils import generate_prompt, print_trainable_parameters
 
 # %% 
 def parse_args():

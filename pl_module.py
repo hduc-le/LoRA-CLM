@@ -13,7 +13,7 @@ from torch.utils.data import RandomSampler, SequentialSampler, DataLoader
 from datasets import load_dataset, DatasetDict
 from typing import Tuple, Union, Dict
 from consts import DEFAULT_SEED
-from utils import generate_prompt
+from data_utils import generate_prompt
 
 class LegalDataModule(pl.LightningDataModule):
     def __init__(self, tokenizer, args) -> None:
