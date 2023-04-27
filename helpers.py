@@ -33,6 +33,12 @@ from consts import (
     RESPONSE_KEY,
     RESPONSE_KEY_NL,
 )
+
+class TrainingArguments:
+    def __init__(self, **kwargs) -> None:
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+        
 # %%
 def load_tokenizer(
         pretrained_model_name_or_path: str = DEFAULT_INPUT_MODEL,
@@ -135,7 +141,7 @@ def _test(model, test_loader):
     return avg_loss
 
 def train(
-        args: argparse.ArgumentParser,
+        args: TrainingArguments,
         model: Union[PeftModel, AutoModelForCausalLM],
         tokenizer: PreTrainedTokenizer,
         train_dataloader: DataLoader,
@@ -211,12 +217,37 @@ def train(
         # Update the current best model if val loss is better
         if args.save_model == 1 and overall_val_loss < min_val_loss:
             LOG.info(f"Val loss improves from {min_val_loss} to {overall_val_loss}.")
+            # save the current model
+            if is_peft_model:
+                save_model_id = (
+                    f"{args.save_name}_{peft_config.peft_type}_{peft_config.task_type}_epoch_{epoch}"
+                )
+            else:
+                save_model_id = f"{args.save_name}_epoch_{epoch}"
+            best_path = os.path.join(out_dir, save_model_id)
 
-            # save current model
-            best_path = os.path.join(out_dir, args.save_name + "_epoch_" + str(epoch))
             LOG.info("Save cur best model to {}".format(best_path))
+            
+            accelerator.wait_for_everyone()
+            unwrapped_model = accelerator.unwrap_model(model)
 
-            model.save_pretrained(best_path)
+            if args.push_to_hub:
+                accelerator.print(f"Epoch {epoch} finished")
+                accelerator.print(f"Pushing to HF hub")
+                try:
+                    if accelerator.is_main_process:
+                        unwrapped_model.push_to_hub(args.huggingface_hub)
+                        tokenizer.push_to_hub(args.huggingface_hub)
+                except Exception as e:
+                    accelerator.print(e)
+                    accelerator.print(f"Failed to push to hub")
+
+            unwrapped_model.save_pretrained(
+                best_path,
+                is_main_process=accelerator.is_main_process,
+                save_function=accelerator.save,
+                state_dict=accelerator.get_state_dict(model),
+            )
             tokenizer.save_pretrained(best_path)
 
             min_val_loss = overall_val_loss
@@ -236,10 +267,14 @@ def train(
 
     # restore the best saved model
     if is_peft_model:
-        model = load_peft_model(best_path)
+        model = load_peft_model(best_path, peft_config)
         tokenizer = load_tokenizer(best_path)
+        save_model_id = (
+                f"best_{args.save_name}_{peft_config.peft_type}_{peft_config.task_type}"
+            )
     else:
         model, tokenizer = get_model_tokenizer(best_path)
+        save_model_id = f"best_{args.save_name}"
 
     if args.save_best:
         # save the current model
@@ -249,25 +284,19 @@ def train(
         if not os.path.exists(out_dir):
             os.makedirs(out_dir)
 
-        # save the current model
-        if is_peft_model:
-            save_model_id = (
-                f"best_{args.save_name}_{peft_config.peft_type}_{peft_config.task_type}"
-            )
-        else:
-            save_model_id = f"best_{args.save_name}"
-
         best_path = os.path.join(out_dir, save_model_id)
+
         LOG.info("Save final best model to {}".format(best_path))
 
-        # save current model to disk
-        model.save_pretrained(best_path)
+        accelerator.wait_for_everyone()
+        unwrapped_model = accelerator.unwrap_model(model)
+        unwrapped_model.save_pretrained(
+            best_path,
+            is_main_process=accelerator.is_main_process,
+            save_function=accelerator.save,
+            state_dict=accelerator.get_state_dict(model),
+        )
         tokenizer.save_pretrained(best_path)
-
-        # push model to HF hub 
-        if args.push_to_hub:
-            model.push_to_hub(args.huggingface_hub)
-            tokenizer.push_to_hub(args.huggingface_hub)
 
         # save model config to file
         with open(best_path + "_args.txt", "w") as f:
@@ -288,10 +317,12 @@ def train(
                 )
             )
 
+        accelerator.end_training()
+
 def test(args, model, test_dataloader) -> None:
     LOG.info("Testing begins...")
-    test_loader = tqdm(
-            test_loader,
+    test_dataloader = tqdm(
+            test_dataloader,
             leave=True,
             disable=not args.show_progress_bar,
             desc=colored(f"Testing on test", "yellow"),
