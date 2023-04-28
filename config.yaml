@@ -2,8 +2,8 @@ save_name: "model-lora"
 model_name_or_path: "databricks/dolly-v2-3b"
 
 # optimizer config
-learning_rate: 2e-5
-weight_decay: 1e-4
+learning_rate: 2.0e-5
+weight_decay: 1.0e-4
 lr_scheduler: "ExponentialLR"
 ExponentialLR_gamma: 0.96
 

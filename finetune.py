@@ -19,12 +19,16 @@ def parse_args():
     parser.add_argument('--config', type=str, default="config.yaml")
     return parser.parse_args()
 
+def read_config(path: str):
+    """read yaml file"""
+    with open(path, 'r') as f:
+        data = yaml.safe_load(f)
+    return data
 # %%
 def main():
     args = parse_args()
     # Load the YAML file
-    with open(args.config, 'r') as f:
-        yaml_data = yaml.load(f, Loader=yaml.FullLoader)
+    yaml_data = read_config(args.config)
     args = TrainingArguments(**yaml_data)
     # Load model and tokenizer
     model, tokenizer = get_model_tokenizer(args.model_name_or_path, load_in_8bit=args.load_8bit)
