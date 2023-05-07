@@ -27,17 +27,6 @@ accelerate config
 
 Example: Training with 2-GPUs
 ```
---------------------------------------------------------------------------------
-In which compute environment are you running?
-> This machine                                                                                                                   
---------------------------------------------------------------------------------
-Which type of machine are you using?                                                                                           
-> multi-GPU                                                                                                                      
-How many different machines will you use (use more than 1 for multi-node training)? [1]:                                       
-> Do you wish to optimize your script with torch dynamo?[yes/NO]:                                                                
-> Do you want to use DeepSpeed? [yes/NO]:                                                                                    
-> How many GPU(s) should be used for distributed training? [1]: 2
-
 In which compute environment are you running?
 Please select a choice using the arrow or number keys, and selecting with enter
  ➔  This machine
