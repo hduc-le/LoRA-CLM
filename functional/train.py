@@ -79,7 +79,7 @@ def train(args: TrainingArguments = None,
         os.makedirs(out_dir)
 
     best_path = None
-    is_peft_model = True if isinstance(model, PeftModel) else False
+    is_peft_model = True if isinstance(model, Union[PeftModel, PeftModelForCausalLM]) else False
 
     LOG.info("Training begins...")
     
@@ -189,7 +189,7 @@ def train(args: TrainingArguments = None,
         tokenizer = load_tokenizer(best_path)
         save_model_id = f"best_{args.save_name}_{peft_config.peft_type}_{peft_config.task_type}"
     else:
-        model, tokenizer = get_model_tokenizer(best_path)
+        model, tokenizer = get_model_tokenizer(best_path, load_in_8bit=args.load_8bit, gradient_checkpointing=False)
         save_model_id = f"best_{args.save_name}"
 
     if args.save_best:
