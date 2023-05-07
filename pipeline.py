@@ -1,7 +1,7 @@
 # Create Instruct Pipeline
 import re
 import numpy as np
-from consts import *
+from utils.consts import *
 from transformers import Pipeline, PreTrainedTokenizer
 
 def get_special_token_id(tokenizer: PreTrainedTokenizer, key: str) -> int:

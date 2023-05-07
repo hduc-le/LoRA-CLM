@@ -7,8 +7,8 @@ from peft import (
     LoraConfig,
     get_peft_model,
 )
-from data_utils import print_trainable_parameters
-from train_utils import *
+from utils.data import print_trainable_parameters
+from functional.train import *
 from pl_module import LitModel, LegalDataModule
 
 
