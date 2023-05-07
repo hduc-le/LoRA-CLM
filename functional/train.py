@@ -69,7 +69,8 @@ def train(args: TrainingArguments = None,
           tokenizer: PreTrainedTokenizer = None,
           train_dataloader: DataLoader = None,
           eval_dataloader: DataLoader = None,
-          accelerator: Accelerator = None) -> None:
+          accelerator: Accelerator = None,
+          peft_config: PeftConfig = None) -> None:
     
     # creating a tmp directory to save the models at each epoch
     out_dir = os.path.abspath(
@@ -79,12 +80,8 @@ def train(args: TrainingArguments = None,
         os.makedirs(out_dir)
 
     best_path = None
-    is_peft_model = True if isinstance(model, Union[PeftModel, PeftModelForCausalLM]) else False
 
     LOG.info("Training begins...")
-    
-    if is_peft_model and hasattr(model, "peft_config"):
-        peft_config = model.peft_config["default"]
 
     min_val_loss = np.inf
     sub_cycle = 0
@@ -138,7 +135,7 @@ def train(args: TrainingArguments = None,
         if args.save_model == 1 and overall_val_loss < min_val_loss:
             LOG.info(f"Val loss improves from {min_val_loss} to {overall_val_loss}.")
             # save the current model
-            if is_peft_model:
+            if args.lora_finetune:
                 save_model_id = f"{args.save_name}_{peft_config.peft_type}_{peft_config.task_type}_epoch_{epoch}"
             else:
                 save_model_id = f"{args.save_name}_epoch_{epoch}"
@@ -184,7 +181,7 @@ def train(args: TrainingArguments = None,
     LOG.info("End of training. Restore the best weights")
 
     # restore the best saved model
-    if is_peft_model:
+    if args.lora_finetune:
         model = load_peft_model(best_path, peft_config)
         tokenizer = load_tokenizer(best_path)
         save_model_id = f"best_{args.save_name}_{peft_config.peft_type}_{peft_config.task_type}"

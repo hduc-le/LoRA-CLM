@@ -40,7 +40,7 @@ def main():
     model, tokenizer = get_model_tokenizer(args.model_name_or_path, 
                                            load_in_8bit=args.load_8bit, 
                                            gradient_checkpointing=args.gradient_checkpointing)
-    
+    peft_config = None
     # LoRA fine tune
     if args.lora_finetune:
         # Peft model
@@ -95,7 +95,7 @@ def main():
     model, optimizer, train_dataloader, eval_dataloader, scheduler = accelerator.prepare(
         model, optimizer, train_dataloader, eval_dataloader, scheduler
     )
-    train(args, model, optimizer, scheduler, tokenizer, train_dataloader, eval_dataloader, accelerator)
+    train(args, model, optimizer, scheduler, tokenizer, train_dataloader, eval_dataloader, accelerator, peft_config)
 
 if __name__ == "__main__":
     main()
