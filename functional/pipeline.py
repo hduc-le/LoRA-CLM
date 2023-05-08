@@ -183,4 +183,15 @@ def generate_response(instruction: str,
     """
 
     generation_pipeline = InstructionTextGenerationPipeline(model=model, tokenizer=tokenizer, **kwargs)
-    return generation_pipeline(instruction)
+    return generation_pipeline(instruction, return_instruction_text=True)
+
+def generate(prompt, model, tokenizer, **generate_kwargs):
+    prompt_encodings = tokenizer(prompt, return_tensors="pt")
+    input_ids = prompt_encodings.input_ids.to(model.device)
+    attention_mask = prompt_encodings.attention_mask.to(model.device)
+
+    outputs = model.generate(input_ids=input_ids, attention_mask=attention_mask, **generate_kwargs)
+
+    decoded = tokenizer.decode(outputs[0], skip_special_tokens=True).strip()
+
+    return decoded[len(prompt):]

@@ -2,11 +2,12 @@ model_config:
   model_name: "databricks/dolly-v2-3b"
   tokenizer_name: "databricks/dolly-v2-3b"
   lora: true
-  lora_path: "Specify this path if `lora` is `true` else `null`"
+  lora_path: "hduc-le/legal-dolly-v2-lora-3b"
 
 generate_config:
   do_sample: true
   num_beams: 4
+  temperature: 0.001
   max_new_tokens: 512
   length_penalty: 1.5
   no_repeat_ngram_size: 3
