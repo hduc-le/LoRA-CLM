@@ -7,7 +7,6 @@ model_config:
 generate_config:
   do_sample: true
   num_beams: 4
-  temperature: 0.001
   max_new_tokens: 512
   length_penalty: 1.5
   no_repeat_ngram_size: 3
