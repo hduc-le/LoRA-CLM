@@ -9,13 +9,13 @@ pip install -r requirements.txt
 ```
 
 ## Usage
-Before training, you need to specify some configuration in `configs/config.yaml`, it will be loaded internally when executing `finetune.py` or `pl_finetune.py`. 
+Before training, you need to specify some configuration in `configs/finetune.yaml`, it will be loaded internally when executing `finetune.py` or `pl_finetune.py`. 
 
 Remark: In case if you want to push the fine-tuned model to HuggingFace hub, please visit your HuggingFace account's settings and copy the Access Tokens (as WRITE mode) then paste it after executing:
 ```bash
 huggingface-cli login
 ```
-The HuggingFace repository where you want to push the model should be specified with `huggingface_hub: "your/huggingface/repo/name"` and `push_to_hub: true` in the `configs/config.yaml`.
+The HuggingFace repository where you want to push the model should be specified with `huggingface_hub: "your/huggingface/repo/name"` and `push_to_hub: true` in the `configs/finetune.yaml`.
 
 ### With PyTorch + Accelerate framework
 To fine-tune with `accelerate` framework, follow the steps:
@@ -52,7 +52,7 @@ no
 ```
 2. Perform fine-tuning.
 ```bash
-accelerate launch finetune.py --config configs/config.yaml
+accelerate launch finetune.py --config configs/finetune.yaml
 ```
 
 ### With PyTorch-Lightning framework

@@ -1,18 +1,48 @@
-# Create Instruct Pipeline
+import os 
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import re
+import torch
 import numpy as np
-from utils.consts import *
-from transformers import Pipeline, PreTrainedTokenizer
+from peft import PeftModelForCausalLM, PeftConfig, PeftModel
+from transformers import (AutoModelForCausalLM,
+                          AutoTokenizer,
+                          Pipeline,
+                          PreTrainedModel,
+                          PreTrainedTokenizer)
+
+from utils.consts import END_KEY, PROMPT_FOR_GENERATION_FORMAT, RESPONSE_KEY, LOG
+
+def setup_model_for_generation(model_name, tokenizer_name, lora=False, lora_path=None):
+    model = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True, device_map="auto", torch_dtype=torch.float16)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, padding_side="left")
+    added_tokens = tokenizer.add_special_tokens({"bos_token": "<s>", "eos_token": "</s>", "pad_token": "<pad>"})
+
+    if added_tokens > 0:
+        model.resize_token_embeddings(len(tokenizer))
+
+    if lora:
+        model = PeftModelForCausalLM.from_pretrained(model, lora_path, device_map="auto", torch_dtype=torch.float16)
+        model.to(dtype=torch.float16)
+
+    LOG.info(f"Mem needed: {model.get_memory_footprint() / 1024 / 1024 / 1024:.2f} GB")
+        
+    return model, tokenizer
 
 def get_special_token_id(tokenizer: PreTrainedTokenizer, key: str) -> int:
     """Gets the token ID for a given string that has been added to the tokenizer as a special token.
+
     When training, we configure the tokenizer so that the sequences like "### Instruction:" and "### End" are
     treated specially and converted to a single, new token.  This retrieves the token ID each of these keys map to.
+
     Args:
         tokenizer (PreTrainedTokenizer): the tokenizer
         key (str): the key to convert to a single token
+
     Raises:
-        RuntimeError: if more than one ID was generated
+        ValueError: if more than one ID was generated
+
     Returns:
         int: the token ID for the given key
     """
@@ -133,3 +163,24 @@ class InstructionTextGenerationPipeline(Pipeline):
             return {"instruction_text": instruction_text, "generated_text": decoded}
 
         return decoded
+
+
+def generate_response(instruction: str, 
+                      *, 
+                      model: PreTrainedModel, 
+                      tokenizer: PreTrainedTokenizer, 
+                      **kwargs) -> str:
+    """Given an instruction, uses the model and tokenizer to generate a response.  This formats the instruction in
+    the instruction format that the model was fine-tuned on.
+
+    Args:
+        instruction (str): _description_
+        model (PreTrainedModel): the model to use
+        tokenizer (PreTrainedTokenizer): the tokenizer to use
+
+    Returns:
+        str: response
+    """
+
+    generation_pipeline = InstructionTextGenerationPipeline(model=model, tokenizer=tokenizer, **kwargs)
+    return generation_pipeline(instruction)

@@ -24,8 +24,6 @@ class TrainingArguments:
 def load_tokenizer(pretrained_model_name_or_path: str = DEFAULT_INPUT_MODEL) -> PreTrainedTokenizer:
     LOG.info(f"Loading tokenizer for {pretrained_model_name_or_path}")
     tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, padding_side="left")
-    tokenizer.pad_token_id = 0  # unk. we want this to be different from the eos token
-    tokenizer.add_special_tokens({"additional_special_tokens": [END_KEY, INSTRUCTION_KEY, RESPONSE_KEY, RESPONSE_KEY_NL]})
     return tokenizer
 
 def load_model(pretrained_model_name_or_path: str = DEFAULT_INPUT_MODEL, * ,
@@ -41,11 +39,11 @@ def load_model(pretrained_model_name_or_path: str = DEFAULT_INPUT_MODEL, * ,
                                                  device_map="auto" if load_in_8bit else None)
     return model
 
-def load_peft_model(pretrained_model_name_or_path: str, peft_config: PeftConfig, **kwargs) -> PeftModel:
+def load_peft_model(pretrained_model_name_or_path: str, **kwargs) -> PeftModel:
     LOG.info(f"Loading peft model for {pretrained_model_name_or_path}")
     peft_config = PeftConfig.from_pretrained(pretrained_model_name_or_path)
-    peft_model = load_model(peft_config.base_model_name_or_path, **kwargs)
-    peft_model = PeftModelForCausalLM.from_pretrained(peft_model, pretrained_model_name_or_path, torch_dtype=torch.bfloat16)
+    base_model = load_model(peft_config.base_model_name_or_path, **kwargs)
+    peft_model = PeftModelForCausalLM.from_pretrained(base_model, pretrained_model_name_or_path, torch_dtype=torch.bfloat16)
     peft_model.to(dtype=torch.bfloat16)
     return peft_model
 
@@ -58,7 +56,11 @@ def get_model_tokenizer(pretrained_model_name_or_path: str = DEFAULT_INPUT_MODEL
                        load_in_8bit=load_in_8bit, 
                        gradient_checkpointing=gradient_checkpointing)
     
-    model.resize_token_embeddings(len(tokenizer))
+    tokenizer.pad_token_id = 0  # unk. we want this to be different from the eos token
+    added_tokens = tokenizer.add_special_tokens({"additional_special_tokens": [END_KEY, INSTRUCTION_KEY, RESPONSE_KEY, RESPONSE_KEY_NL]})
+
+    if added_tokens > 0:
+        model.resize_token_embeddings(len(tokenizer))
 
     return model, tokenizer
 
@@ -135,7 +137,7 @@ def train(args: TrainingArguments = None,
         if args.save_model == 1 and overall_val_loss < min_val_loss:
             LOG.info(f"Val loss improves from {min_val_loss} to {overall_val_loss}.")
             # save the current model
-            if args.lora_finetune:
+            if args.lora:
                 save_model_id = f"{args.save_name}_{peft_config.peft_type}_{peft_config.task_type}_epoch_{epoch}"
             else:
                 save_model_id = f"{args.save_name}_epoch_{epoch}"
@@ -181,8 +183,8 @@ def train(args: TrainingArguments = None,
     LOG.info("End of training. Restore the best weights")
 
     # restore the best saved model
-    if args.lora_finetune:
-        model = load_peft_model(best_path, peft_config)
+    if args.lora:
+        model = load_peft_model(best_path)
         tokenizer = load_tokenizer(best_path)
         save_model_id = f"best_{args.save_name}_{peft_config.peft_type}_{peft_config.task_type}"
     else:

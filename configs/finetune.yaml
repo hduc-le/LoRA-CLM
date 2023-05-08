@@ -11,7 +11,7 @@ lr_scheduler: null
 ExponentialLR_gamma: 0.96
 
 # training config
-lora_finetune: true             # set `False` for fully fine-tuning
+lora: true             # set `False` for fully fine-tuning
 load_8bit: false                
 num_epochs: 5
 save_model: 1

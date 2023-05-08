@@ -7,22 +7,15 @@ from datasets import load_dataset
 from accelerate import Accelerator
 from accelerate.utils import set_seed
 from peft import LoraConfig, get_peft_model
-from functional.train import TrainingArguments, get_model_tokenizer, train
+from functional.training import TrainingArguments, get_model_tokenizer, train
 from utils.consts import LOG, DEFAULT_SEED
 from utils.data import generate_prompt, print_trainable_parameters
+from utils.read import read_config
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Training Arguments')
     parser.add_argument('--config', type=str, default="configs/config.yaml")
     return parser.parse_args()
-
-def read_config(path):
-    # read yaml and return contents 
-    with open(path, 'r') as file:
-        try:
-            return yaml.safe_load(file)
-        except yaml.YAMLError as exc:
-            print(exc)
 
 # %% 
 def main():
@@ -42,7 +35,7 @@ def main():
                                            gradient_checkpointing=args.gradient_checkpointing)
     peft_config = None
     # LoRA fine tune
-    if args.lora_finetune:
+    if args.lora:
         # Peft model
         peft_config = LoraConfig(r=args.lora_r,
                                  inference_mode=False,

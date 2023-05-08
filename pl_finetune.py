@@ -5,8 +5,9 @@ import torch
 import pytorch_lightning as pl
 from peft import prepare_model_for_int8_training, LoraConfig, get_peft_model
 from utils.data import print_trainable_parameters
-from functional.train import get_model_tokenizer, TrainingArguments
+from functional.training import get_model_tokenizer, TrainingArguments
 from pl_module import LitModel, LegalDataModule
+from utils.read import read_config
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Training Arguments')
@@ -32,7 +33,7 @@ def main():
                                            gradient_checkpointing=args.gradient_checkpointing)
     
     peft_config = None
-    if args.lora_finetune:
+    if args.lora:
         # Peft model
         model = prepare_model_for_int8_training(model, use_gradient_checkpointing=True)
         peft_config = LoraConfig(r=args.lora_r,
