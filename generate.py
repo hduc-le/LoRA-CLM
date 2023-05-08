@@ -16,7 +16,7 @@ if __name__=="__main__":
     model.eval()
     model.to(device)
     
-    response = generate_response(instructino=args.prompt, 
+    response = generate_response(instruction=args.prompt, 
                                  model=model, tokenizer=tokenizer, **config["generate_config"])
     
     print(response)
