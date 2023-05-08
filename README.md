@@ -9,7 +9,7 @@ pip install -r requirements.txt
 ```
 
 ## Usage
-Before training, you need to specify some configuration in `configs/finetune.yaml`, it will be loaded internally when executing `finetune.py` or `pl_finetune.py`. 
+Before training, you need to specify some configuration in `configs/finetune.yaml`, it will be loaded internally when executing `finetune.py`. 
 
 Remark: In case if you want to push the fine-tuned model to HuggingFace hub, please visit your HuggingFace account's settings and copy the Access Tokens (as WRITE mode) then paste it after executing:
 ```bash
