@@ -1,6 +1,6 @@
 # LoRA-CLM
 ## Overview
-A simple and friendly code for fine-tuning CausalLM with `LoRA` (Low-Rank Adaptation) method such as Dolly 2.0 that can be applied to the custom datasets and provide distributed training mode on multi-GPUs using `Accelerate` and `PyTorch-Lightning`.
+A simple and friendly code for fine-tuning CausalLM with `LoRA` (Low-Rank Adaptation) method such as Dolly 2.0 that can be applied to the custom datasets and provide distributed training mode on multi-GPUs using `Accelerate`.
 
 ## Installation
 To install the necessary software, follow the following command:
@@ -17,7 +17,7 @@ huggingface-cli login
 ```
 The HuggingFace repository where you want to push the model should be specified with `huggingface_hub: "your/huggingface/repo/name"` and `push_to_hub: true` in the `configs/finetune.yaml`.
 
-### With PyTorch + Accelerate framework
+### Fine tuning with PyTorch + Accelerate framework
 To fine-tune with `accelerate` framework, follow the steps:
 
 1. Generate config and follow the instruction (to specify number gpus, machines, precision, etc).
@@ -34,8 +34,8 @@ Please select a choice using the arrow or number keys, and selecting with enter
 --------------------------------------------------------------------------------
 Which type of machine are you using?           
 Please select a choice using the arrow or number keys, and selecting with enter
-    No distributed training                                                                                                                                                                       
-    multi-CPU                                                                                                                                                                                     
+    No distributed training
+    multi-CPU                                                           
  ➔  multi-GPU
     TPU
 --------------------------------------------------------------------------------
@@ -55,8 +55,9 @@ no
 accelerate launch finetune.py --config configs/finetune.yaml
 ```
 
-### With PyTorch-Lightning framework
-To fine-tune with `pytorch-lightning` framework, run the following command:
+### Text Generation
+Configure `configs/generate.yaml` then execute the following command:
 ```bash
-python pl_finetune.py --config configs/config.yaml
+python generate.py --config configs/generate.yaml\
+                   --prompt "enter your instruction here!!!"
 ```
