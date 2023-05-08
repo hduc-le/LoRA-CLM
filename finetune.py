@@ -6,7 +6,7 @@ from torch.utils.data import RandomSampler, SequentialSampler, DataLoader
 from datasets import load_dataset
 from accelerate import Accelerator
 from accelerate.utils import set_seed
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig, get_peft_model, prepare_model_for_int8_training
 from functional.training import TrainingArguments, get_model_tokenizer, train
 from utils.consts import LOG, DEFAULT_SEED
 from utils.data import generate_prompt, print_trainable_parameters
@@ -37,6 +37,7 @@ def main():
     # LoRA fine tune
     if args.lora:
         # Peft model
+        model = prepare_model_for_int8_training(model, use_gradient_checkpointing=True)
         peft_config = LoraConfig(r=args.lora_r,
                                  inference_mode=False,
                                  lora_alpha=args.lora_alpha,
