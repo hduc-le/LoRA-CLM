@@ -35,7 +35,7 @@ def get_response():
                                  tokenizer=tokenizer,
                                  instruction=userText+" "+RESPONSE_KEY,
                                  **config["generate_config"])
-    return str(response["generated_text"])
+    return str(response["generated_text"].replace(RESPONSE_KEY, "").strip())
  
 if __name__ == "__main__":
     app.run(debug=True)
