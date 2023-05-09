@@ -162,13 +162,14 @@ class InstructionTextGenerationPipeline(Pipeline):
         if return_instruction_text:
             return {"instruction_text": instruction_text, "generated_text": decoded}
 
-        return decoded
+        return {"generated_text": decoded}
 
 
 def generate_response(instruction: str, 
                       *, 
                       model: PreTrainedModel, 
                       tokenizer: PreTrainedTokenizer, 
+                      return_instruction_text: bool = False,
                       **kwargs) -> str:
     """Given an instruction, uses the model and tokenizer to generate a response.  This formats the instruction in
     the instruction format that the model was fine-tuned on.
@@ -183,7 +184,7 @@ def generate_response(instruction: str,
     """
 
     generation_pipeline = InstructionTextGenerationPipeline(model=model, tokenizer=tokenizer, **kwargs)
-    return generation_pipeline(instruction, return_instruction_text=True)
+    return generation_pipeline(instruction, return_instruction_text=return_instruction_text)
 
 def generate(prompt, model, tokenizer, **generate_kwargs):
     prompt_encodings = tokenizer(prompt, return_tensors="pt")

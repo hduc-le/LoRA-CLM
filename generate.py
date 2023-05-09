@@ -22,8 +22,7 @@ if __name__=="__main__":
                                  instruction=args.prompt + " " + RESPONSE_KEY_NL,
                                  **config["generate_config"])
     
-    print(colored("Instruction Text:\n", "light_green", attrs=["bold"]), response["instruction_text"])
-    print(colored("Generated Text:\n", "light_green", attrs=["bold"]), response["generated_text"])
-    
+    if config["generate_config"]["return_instruction_text"]:
+        print(colored("Instruction Text:\n", "light_green", attrs=["bold"]), response["instruction_text"])
 
-    
+    print(colored("Generated Text:\n", "light_green", attrs=["bold"]), response["generated_text"])
