@@ -79,6 +79,3 @@ Step 4. Create secure tunnels
 ```bash
 socketxp connect $local_host_ip
 ```
-
-Simple UI
-![chatbot-ui](/app/imgs/chatbot-simple-ui.png)
