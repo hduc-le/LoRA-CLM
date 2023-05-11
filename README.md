@@ -61,3 +61,24 @@ Configure `configs/generate.yaml` then execute the following command:
 python generate.py --config configs/generate.yaml\
                    --prompt "enter your instruction here!!!"
 ```
+
+## Web Application
+Step 1. Download SocketXP for publishing local-host
+```bash
+curl -O https://portal.socketxp.com/download/linux/socketxp && chmod +wx socketxp && sudo mv socketxp /usr/local/bin
+```
+Step 2. Authenticate
+```
+socketxp login $ACCESS_TOKENS
+```
+Step 3. Run flask app
+```python
+python app/app.py
+```
+Step 4. Create secure tunnels
+```bash
+socketxp connect $local_host_ip
+```
+
+Simple UI
+![chatbot-ui](/app/imgs/chatbot-simple-ui.png)
