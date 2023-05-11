@@ -12,7 +12,7 @@ app = Flask(__name__, template_folder='template', static_folder='static')
 
 ######################## MODEL PREPARATION ########################
 
-config = read_config("../configs/generate.yaml")
+config = read_config("configs/generate.yaml")
 # %%
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -41,10 +41,9 @@ def get_response():
                                  tokenizer=tokenizer,
                                  instruction=user_text+" "+RESPONSE_KEY,
                                  **config["generate_config"])
-    
-    display_response = str(model_response["generated_text"].replace(RESPONSE_KEY, "").strip())
 
-    return jsonify({"msg": display_response})
+    return jsonify({"msg": (model_response["generated_text"]
+                            .replace(RESPONSE_KEY, ""))})
 
 if __name__ == "__main__":
     app.run(debug=True)

@@ -193,6 +193,6 @@ def generate(prompt, model, tokenizer, **generate_kwargs):
 
     outputs = model.generate(input_ids=input_ids, attention_mask=attention_mask, **generate_kwargs)
 
-    decoded = tokenizer.decode(outputs[0], skip_special_tokens=True).strip()
+    decoded = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
     return decoded[len(prompt):]
