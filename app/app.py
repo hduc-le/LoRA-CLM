@@ -2,7 +2,7 @@ import torch
 from functional.pipeline import setup_model_for_generation, generate_response
 from utils.read import read_config
 from utils.consts import LOG, RESPONSE_KEY
-from flask import Flask, render_template, request, redirect
+from flask import Flask, render_template, request, redirect, jsonify
  
 app = Flask(__name__, template_folder='template', static_folder='static')
 
@@ -30,12 +30,15 @@ def get_response():
     Ex: 
         >> response = model.generate(userText, **kwargs)
     """
-    userText = request.args.get('msg')
-    response = generate_response(model=model,
+    user_text = request.args.get("msg-text")
+    model_response = generate_response(model=model,
                                  tokenizer=tokenizer,
-                                 instruction=userText+" "+RESPONSE_KEY,
+                                 instruction=user_text+" "+RESPONSE_KEY,
                                  **config["generate_config"])
-    return str(response["generated_text"].replace(RESPONSE_KEY, "").strip())
- 
+    
+    display_response = str(model_response["generated_text"].replace(RESPONSE_KEY, "").strip())
+
+    return jsonify({"msg": display_response})
+
 if __name__ == "__main__":
     app.run(debug=True)
