@@ -1,3 +1,7 @@
+# %%
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 from functional.pipeline import setup_model_for_generation, generate_response
 from utils.read import read_config
@@ -7,7 +11,9 @@ from flask import Flask, render_template, request, redirect, jsonify
 app = Flask(__name__, template_folder='template', static_folder='static')
 
 ######################## MODEL PREPARATION ########################
-config = read_config("configs/generate.yaml")
+
+config = read_config("../configs/generate.yaml")
+# %%
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 model, tokenizer = setup_model_for_generation(**config["model_config"])
