@@ -1,6 +1,6 @@
-import argparse
 import yaml
 import torch
+import argparse
 from transformers import DataCollatorForLanguageModeling
 from torch.utils.data import RandomSampler, SequentialSampler, DataLoader
 from datasets import load_dataset
@@ -9,7 +9,7 @@ from accelerate.utils import set_seed
 from peft import LoraConfig, get_peft_model, prepare_model_for_int8_training
 from functional.training import TrainingArguments, get_model_tokenizer, train
 from utils.consts import LOG, DEFAULT_SEED
-from utils.data import generate_prompt, print_trainable_parameters
+from utils.data import generate_prompt, print_trainable_parameters, DataCollatorForCompletionOnlyLM
 from utils.read import read_config
 
 def parse_args():
@@ -17,7 +17,6 @@ def parse_args():
     parser.add_argument('--config', type=str, default="configs/config.yaml")
     return parser.parse_args()
 
-# %% 
 def main():
     p_args = parse_args()
     # Load the training config file
@@ -66,17 +65,11 @@ def main():
     train_sampler = RandomSampler(train_testvalid["train"])
     eval_sampler = SequentialSampler(train_testvalid["test"])
 
-    collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
+    data_collator = DataCollatorForCompletionOnlyLM(tokenizer=tokenizer, mlm=False, return_tensors="pt", pad_to_multiple_of=8)
 
-    train_dataloader = DataLoader(train_testvalid["train"],
-                                  batch_size=args.train_bsz,
-                                  collate_fn=collator,
-                                  sampler=train_sampler)
+    train_dataloader = DataLoader(train_testvalid["train"], batch_size=args.train_bsz, collate_fn=data_collator, sampler=train_sampler)
 
-    eval_dataloader = DataLoader(train_testvalid["test"],
-                                 batch_size=args.test_bsz,
-                                 collate_fn=collator,
-                                 sampler=eval_sampler)
+    eval_dataloader = DataLoader(train_testvalid["test"], batch_size=args.test_bsz, collate_fn=data_collator,sampler=eval_sampler)
 
     optimizer = torch.optim.AdamW(model.parameters(), 
                                   lr=args.learning_rate * accelerator.num_processes, 
