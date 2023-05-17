@@ -80,7 +80,7 @@ def generate_prompt(data_point):
 {data_point["response"]}"""
 
 import numpy as np
-from consts import RESPONSE_KEY_NL
+from .consts import RESPONSE_KEY_NL
 from transformers import DataCollatorForLanguageModeling
 from typing import List, Union, Any, Dict
 

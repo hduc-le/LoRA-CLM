@@ -26,7 +26,7 @@ data_path: ### SETUP
 cutoff_len: 512
 train_bsz: 4
 test_bsz: 4
-test_ratio: 0.2
+test_size: 0.2
 
 # LoRA config
 lora_r: 4

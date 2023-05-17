@@ -60,16 +60,15 @@ def main():
         remove_columns=["instruction", "input", "response"]
     )
     # 90% train, 10% test + validation
-    train_testvalid = data.train_test_split(test_size=args.test_ratio, seed=DEFAULT_SEED)
+    split_dataset = data.train_test_split(test_size=args.test_size, seed=DEFAULT_SEED)
     
-    train_sampler = RandomSampler(train_testvalid["train"])
-    eval_sampler = SequentialSampler(train_testvalid["test"])
+    train_sampler = RandomSampler(split_dataset["train"])
+    eval_sampler = SequentialSampler(split_dataset["test"])
 
-    data_collator = DataCollatorForCompletionOnlyLM(tokenizer=tokenizer, mlm=False, return_tensors="pt", pad_to_multiple_of=8)
+    data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
-    train_dataloader = DataLoader(train_testvalid["train"], batch_size=args.train_bsz, collate_fn=data_collator, sampler=train_sampler)
-
-    eval_dataloader = DataLoader(train_testvalid["test"], batch_size=args.test_bsz, collate_fn=data_collator,sampler=eval_sampler)
+    train_dataloader = DataLoader(split_dataset["train"], batch_size=args.train_bsz, collate_fn=data_collator, sampler=train_sampler)
+    eval_dataloader = DataLoader(split_dataset["test"], batch_size=args.test_bsz, collate_fn=data_collator,sampler=eval_sampler)
 
     optimizer = torch.optim.AdamW(model.parameters(), 
                                   lr=args.learning_rate * accelerator.num_processes, 
