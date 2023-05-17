@@ -1,5 +1,4 @@
 accelerate>=0.12.0
-deepspeed 
 transformers
 datasets 
 loralib 
