@@ -98,18 +98,17 @@ def train(args: TrainingArguments = None,
         model.train()
         overall_train_loss = 0.0
         for step, batch in enumerate(train_dataloader):
-            with accelerator.accumulate(model):
-                outputs = model(**batch)
-                loss = outputs.loss
-                accelerator.backward(loss)
+            outputs = model(**batch)
+            loss = outputs.loss
+            accelerator.backward(loss)
 
-                optimizer.step()
-                if scheduler:
-                    scheduler.step()
-                optimizer.zero_grad()
+            optimizer.step()
+            if scheduler:
+                scheduler.step()
+            optimizer.zero_grad()
 
-                train_dataloader.set_postfix(loss=loss.item())
-                overall_train_loss += loss.item()
+            train_dataloader.set_postfix(loss=loss.item())
+            overall_train_loss += loss.item()
 
         LOG.info("[Epoch: " + str(epoch) + "] " + "[Loss = " + "{:.4f}".format(overall_train_loss/len(train_dataloader)) + "] ")
         
@@ -120,16 +119,16 @@ def train(args: TrainingArguments = None,
                                desc=colored(f"Testing on evaluation - Epoch {epoch}", "yellow"))
 
         model.eval()
-        overall_val_loss = 0.0
+        val_losses = []
         for eval_step, eval_batch in enumerate(eval_dataloader):
             with torch.no_grad():
                 outputs = model(**eval_batch)
-                loss = outputs.loss
-
-            overall_val_loss += loss.item()
+            loss = outputs.loss
+            val_losses.append(accelerator.gather(loss[None]))
             eval_dataloader.set_postfix(loss=loss.item())
 
-        overall_val_loss /= len(eval_dataloader)
+        # Compute average validation loss
+        overall_val_loss = torch.stack(val_losses).sum().item() / len(val_losses)
 
         LOG.info("[Test Summary] " + "[Loss = " + "{:.4f}".format(overall_val_loss) + "] ")
 

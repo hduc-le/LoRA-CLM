@@ -24,7 +24,7 @@ def main():
     args = TrainingArguments(**yaml_data)
 
     # Accelerator setup
-    accelerator = Accelerator(gradient_accumulation_steps=args.gradient_accumulation_steps)
+    accelerator = Accelerator()
     accelerator.print(f"Using {accelerator.num_processes} GPUs")
     set_seed(DEFAULT_SEED)
 

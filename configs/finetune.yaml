@@ -6,7 +6,6 @@ model_name_or_path: "databricks/dolly-v2-3b"
 learning_rate: 2.0e-5
 weight_decay: 0.0
 gradient_checkpointing: true
-gradient_accumulation_steps: 2
 lr_scheduler: null
 ExponentialLR_gamma: 0.96
 
