@@ -3,7 +3,7 @@ from argparse import ArgumentParser
 from utils.read import read_config
 from termcolor import colored
 from utils.consts import RESPONSE_KEY_NL
-from functional.pipeline import generate_response, setup_model_for_generation
+from pipeline import generate_response, setup_model_for_generation
 
 if __name__=="__main__":
     parser = ArgumentParser()

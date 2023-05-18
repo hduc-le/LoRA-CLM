@@ -1,11 +1,11 @@
 # %%
 import os
 import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
-from functional.pipeline import setup_model_for_generation, generate_response
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from pipeline import setup_model_for_generation, generate_response
 from utils.read import read_config
-from utils.consts import LOG, RESPONSE_KEY
+from utils.consts import RESPONSE_KEY
 from flask import Flask, render_template, request, redirect, jsonify
  
 app = Flask(__name__, template_folder='template', static_folder='static')

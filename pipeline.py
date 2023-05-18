@@ -5,14 +5,20 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import re
 import torch
 import numpy as np
-from peft import PeftModelForCausalLM, PeftConfig, PeftModel
+from peft import PeftModelForCausalLM
 from transformers import (AutoModelForCausalLM,
                           AutoTokenizer,
                           Pipeline,
                           PreTrainedModel,
                           PreTrainedTokenizer)
 
-from utils.consts import END_KEY, PROMPT_FOR_GENERATION_FORMAT, RESPONSE_KEY, LOG
+from utils.consts import END_KEY, PROMPT_FOR_GENERATION_FORMAT, RESPONSE_KEY
+
+import logging
+
+# Create a custom logger
+logger = logging.getLogger(__name__)
+
 
 def setup_model_for_generation(model_name, tokenizer_name, lora=False, lora_path=None):
     model = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True, device_map="auto", torch_dtype=torch.float16)
@@ -26,7 +32,7 @@ def setup_model_for_generation(model_name, tokenizer_name, lora=False, lora_path
         model = PeftModelForCausalLM.from_pretrained(model, lora_path, device_map="auto", torch_dtype=torch.float16)
         model.to(dtype=torch.float16)
 
-    LOG.info(f"Mem needed: {model.get_memory_footprint() / 1024 / 1024 / 1024:.2f} GB")
+    logger.info(f"Mem needed: {model.get_memory_footprint() / 1024 / 1024 / 1024:.2f} GB")
         
     return model, tokenizer
 
@@ -124,7 +130,7 @@ class InstructionTextGenerationPipeline(Pipeline):
             response_pos = None
             response_positions = np.where(sequence == response_key_token_id)[0]
             if len(response_positions) == 0:
-                LOG.warn(f"Could not find response key {response_key_token_id} in: {sequence}")
+                logger.warn(f"Could not find response key {response_key_token_id} in: {sequence}")
             else:
                 response_pos = response_positions[0]
 
@@ -157,7 +163,7 @@ class InstructionTextGenerationPipeline(Pipeline):
                 if m:
                     decoded = m.group(1).strip()
                 else:
-                    LOG.warn(f"Failed to find response in:\n{fully_decoded}")
+                    logger.warn(f"Failed to find response in:\n{fully_decoded}")
 
         if return_instruction_text:
             return {"instruction_text": instruction_text, "generated_text": decoded}

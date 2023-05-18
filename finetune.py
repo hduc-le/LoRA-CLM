@@ -1,87 +1,176 @@
-import yaml
 import torch
 import argparse
-from transformers import DataCollatorForLanguageModeling
-from torch.utils.data import RandomSampler, SequentialSampler, DataLoader
+import datasets
+import transformers
+import numpy as np
+import logging
+from tqdm import tqdm
 from datasets import load_dataset
 from accelerate import Accelerator
-from accelerate.utils import set_seed
+from colorlog import ColoredFormatter
+from utils.read import read_config, get_model_tokenizer
+from utils.data import generate_prompt, print_trainable_parameters
+from transformers import DataCollatorForLanguageModeling, set_seed
+from torch.utils.data import RandomSampler, SequentialSampler, DataLoader
 from peft import LoraConfig, get_peft_model, prepare_model_for_int8_training
-from functional.training import TrainingArguments, get_model_tokenizer, train
-from utils.consts import LOG, DEFAULT_SEED
-from utils.data import generate_prompt, print_trainable_parameters, DataCollatorForCompletionOnlyLM
-from utils.read import read_config
 
-def parse_args():
-    parser = argparse.ArgumentParser(description='Training Arguments')
-    parser.add_argument('--config', type=str, default="configs/config.yaml")
-    return parser.parse_args()
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
 
-def main():
-    p_args = parse_args()
-    # Load the training config file
-    yaml_data = read_config(p_args.config)
-    args = TrainingArguments(**yaml_data)
+formatter = ColoredFormatter(
+    "%(log_color)s[%(asctime)s] %(message)s",
+    datefmt=None,
+    reset=True,
+    log_colors={
+        "DEBUG": "cyan",
+        "INFO": "green,bold",
+        "INFOV": "cyan,bold",
+        "WARNING": "yellow",
+        "ERROR": "red,bold",
+        "CRITICAL": "red,bg_white",
+    },
+    secondary_log_colors={},
+    style="%",
+)
+ch.setFormatter(formatter)
 
-    # Accelerator setup
+logger = logging.getLogger("rn")
+logger.setLevel(logging.DEBUG)
+logger.handlers = []  # No duplicated handlers
+logger.propagate = False  # workaround for duplicated logs in ipython
+logger.addHandler(ch)
+
+def train(model, optimizer, train_dataloader, eval_dataloader, config):
+    # Initialize accelerator
     accelerator = Accelerator()
     accelerator.print(f"Using {accelerator.num_processes} GPUs")
-    set_seed(DEFAULT_SEED)
+    # To have only one message (and not 8) per logs of Transformers or Datasets, we set the logging verbosity
+    # to INFO for the main process only.
+    if accelerator.is_main_process:
+        datasets.utils.logging.set_verbosity_warning()
+        transformers.utils.logging.set_verbosity_info()
+    else:
+        datasets.utils.logging.set_verbosity_error()
+        transformers.utils.logging.set_verbosity_error()
+
+    # The seed need to be set before we instantiate the model, as it will determine the random head.
+    set_seed(config["seed"])
+
+    # There is no specific order to remember, we just need to unpack the objects in the same order we gave them to the
+    # prepare method.
+    model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(
+        model, optimizer, train_dataloader, eval_dataloader
+    )
+    
+    # Now we train the model
+    epochs_no_improve = 0
+    min_val_loss = 1e9
+    for epoch in range(config["num_epochs"]):
+        # We only enable the progress bar on the main process to avoid having 8 progress bars.
+        progress_bar = tqdm(range(len(train_dataloader)), disable=not accelerator.is_main_process)
+        progress_bar.set_description(f"Epoch: {epoch}")
+        model.train()
+        for batch in train_dataloader:
+            outputs = model(**batch)
+            loss = outputs.loss
+            accelerator.backward(loss)
+            
+            optimizer.step()
+            optimizer.zero_grad()
+            progress_bar.set_postfix({'loss': loss.item()})
+            progress_bar.update(1)
+
+        # Evaluate at the end of the epoch (distributed evaluation as we have 8 TPU cores)
+        model.eval()
+        validation_losses = []
+        for batch in eval_dataloader:
+            with torch.no_grad():
+                outputs = model(**batch)
+            loss = outputs.loss
+
+            # We gather the loss from the 8 TPU cores to have them all.
+            validation_losses.append(accelerator.gather(loss[None]))
+
+        # Compute average validation loss
+        val_loss = torch.stack(validation_losses).sum().item() / len(validation_losses)
+        # Use accelerator.print to print only on the main process.
+        accelerator.print(f"epoch {epoch}: validation loss:", val_loss)
+        if val_loss < min_val_loss:
+            epochs_no_improve = 0
+            min_val_loss = val_loss
+            continue
+        else:
+            epochs_no_improve += 1
+            # Check early stopping condition
+            if epochs_no_improve == config["patience"]:
+                accelerator.print("Early stopping!")
+                break
+
+    # save trained model
+    accelerator.wait_for_everyone()
+    unwrapped_model = accelerator.unwrap_model(model)
+    # Use accelerator.save to save
+    unwrapped_model.save_pretrained(config["output_dir"], save_function=accelerator.save)
+
+def main(config_path):
+    # Load the training config file
+    config = read_config(config_path)
 
     # Load model and tokenizer
-    model, tokenizer = get_model_tokenizer(args.model_name_or_path, 
-                                           load_in_8bit=args.load_8bit, 
-                                           gradient_checkpointing=args.gradient_checkpointing)
-    peft_config = None
+    model, tokenizer = get_model_tokenizer(config["model_name_or_path"], 
+                                           load_in_8bit=config["load_8bit"], 
+                                           gradient_checkpointing=config["gradient_checkpointing"])
     # LoRA fine tune
-    if args.lora:
+    if config["lora"]:
         # Peft model
         model = prepare_model_for_int8_training(model, use_gradient_checkpointing=True)
-        peft_config = LoraConfig(r=args.lora_r,
+        peft_config = LoraConfig(r=config["lora_r"],
                                  inference_mode=False,
-                                 lora_alpha=args.lora_alpha,
-                                 lora_dropout=args.lora_dropout,
+                                 lora_alpha=config["lora_alpha"],
+                                 lora_dropout=config["lora_dropout"],
                                  bias="none",
                                  task_type="CAUSAL_LM")
         
         model = get_peft_model(model, peft_config)
         print_trainable_parameters(model)
 
-    LOG.info(f"Mem needed: {model.get_memory_footprint() / 1024 / 1024 / 1024:.2f} GB")
-    # Load dataset
-    data = load_dataset("json", data_files=args.data_path, split="train")
+    logger.info(f"Mem needed: {model.get_memory_footprint() / 1024 / 1024 / 1024:.2f} GB")
+
+    # Load datasetimport numpy as np
+    data = load_dataset("json", data_files=config["data_path"], split="train")
     data = data.shuffle().map(
         lambda data_point: tokenizer(
             generate_prompt(data_point),
             truncation=True,
-            max_length=args.cutoff_len,
+            max_length=config["max_length"],
             padding="max_length",
         ),
         remove_columns=["instruction", "input", "response"]
     )
     # 90% train, 10% test + validation
-    split_dataset = data.train_test_split(test_size=args.test_size, seed=DEFAULT_SEED)
+    split_dataset = data.train_test_split(test_size=config["test_size"], seed=config["seed"])
     
-    train_sampler = RandomSampler(split_dataset["train"])
-    eval_sampler = SequentialSampler(split_dataset["test"])
-
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
-    train_dataloader = DataLoader(split_dataset["train"], batch_size=args.train_bsz, collate_fn=data_collator, sampler=train_sampler)
-    eval_dataloader = DataLoader(split_dataset["test"], batch_size=args.test_bsz, collate_fn=data_collator,sampler=eval_sampler)
+    train_dataloader = DataLoader(split_dataset["train"], 
+                                  batch_size=config["train_batch_size"], 
+                                  collate_fn=data_collator, 
+                                  sampler=RandomSampler(split_dataset["train"]))
+    
+    eval_dataloader = DataLoader(split_dataset["test"], 
+                                 batch_size=config["eval_batch_size"], 
+                                 collate_fn=data_collator, 
+                                 sampler=SequentialSampler(split_dataset["test"]))
 
     optimizer = torch.optim.AdamW(model.parameters(), 
-                                  lr=args.learning_rate * accelerator.num_processes, 
-                                  weight_decay=args.weight_decay)
+                                  lr=config["lr"], 
+                                  weight_decay=config["weight_decay"])
 
-    scheduler = None
-    if args.lr_scheduler == "ExponentialLR":
-        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.ExponentialLR_gamma)
-    
-    model, optimizer, train_dataloader, eval_dataloader, scheduler = accelerator.prepare(
-        model, optimizer, train_dataloader, eval_dataloader, scheduler
-    )
-    train(args, model, optimizer, scheduler, tokenizer, train_dataloader, eval_dataloader, accelerator, peft_config)
+    train(model=model, optimizer=optimizer, train_dataloader=train_dataloader, 
+          eval_dataloader=eval_dataloader, config=config)
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description='Training Arguments')
+    parser.add_argument('--config', type=str, default="configs/config.yaml")
+    args = parser.parse_args()
+    main(args.config)
