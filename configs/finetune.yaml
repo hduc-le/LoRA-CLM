@@ -4,7 +4,7 @@ model_name_or_path: "databricks/dolly-v2-3b"
 output_dir: "./results"
 
 # optimizer config
-learning_rate: 2.0e-5
+lr: 2.0e-5
 weight_decay: 1.0e-4
 
 # training config
@@ -15,8 +15,8 @@ seed: 42
 gradient_checkpointing: true
 
 # data config
-data_path: ### SETUP
-max_length: 512
+data_path: ".json"
+max_length: 768
 train_batch_size: 4
 eval_batch_size: 4
 test_size: 0.2
