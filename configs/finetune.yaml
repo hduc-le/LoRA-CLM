@@ -2,16 +2,16 @@
 save_name: "lora-dolly-v2-3b"
 model_name_or_path: "databricks/dolly-v2-3b"
 output_dir: "./results"
+load_8bit: false
 
 # optimizer config
 lr: 5.0e-5
 weight_decay: 0.0
 
 # training config
-load_8bit: false
+seed: 42
 num_epochs: 2
 patience: 2
-seed: 42
 gradient_accumulation_steps: 2
 gradient_checkpointing: true
 
