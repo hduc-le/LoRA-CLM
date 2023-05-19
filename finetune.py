@@ -2,6 +2,8 @@ import torch
 import argparse
 import numpy as np
 import logging
+import datasets
+import transformers
 from tqdm import tqdm
 from datasets import load_dataset
 from accelerate import Accelerator
@@ -53,7 +55,6 @@ def main():
     # LoRA fine tune
     if config["lora"]:
         # Peft model
-        model = prepare_model_for_int8_training(model, use_gradient_checkpointing=True)
         peft_config = LoraConfig(r=config["lora_r"],
                                  inference_mode=False,
                                  lora_alpha=config["lora_alpha"],
@@ -80,26 +81,33 @@ def main():
     # 90% train, 10% test + validation
     split_dataset = data.train_test_split(test_size=config["test_size"], seed=config["seed"])
     
+    # Initialize accelerator
+    accelerator = Accelerator(gradient_accumulation_steps=config["gradient_accumulation_steps"])
+    accelerator.print(f"Using {accelerator.num_processes} GPUs")
+    
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
     train_dataloader = DataLoader(split_dataset["train"], 
                                   batch_size=config["train_batch_size"], 
-                                  collate_fn=data_collator, 
-                                  sampler=RandomSampler(split_dataset["train"]))
+                                  collate_fn=data_collator)
     
     eval_dataloader = DataLoader(split_dataset["test"], 
                                  batch_size=config["eval_batch_size"], 
-                                 collate_fn=data_collator, 
-                                 sampler=SequentialSampler(split_dataset["test"]))
+                                 collate_fn=data_collator)
 
     optimizer = torch.optim.AdamW(model.parameters(), 
-                                  lr=config["lr"], 
+                                  lr=config["lr"] * accelerator.num_processes, 
                                   weight_decay=config["weight_decay"])
-
-    # Initialize accelerator
-    accelerator = Accelerator()
-    accelerator.print(f"Using {accelerator.num_processes} GPUs")
-
+    
+    # To have only one message (and not 8) per logs of Transformers or Datasets, we set the logging verbosity
+    # to INFO for the main process only.
+    if accelerator.is_main_process:
+        datasets.utils.logging.set_verbosity_warning()
+        transformers.utils.logging.set_verbosity_info()
+    else:
+        datasets.utils.logging.set_verbosity_error()
+        transformers.utils.logging.set_verbosity_error()
+        
     # The seed need to be set before we instantiate the model, as it will determine the random head.
     set_seed(config["seed"])
 
@@ -115,13 +123,15 @@ def main():
     for epoch in range(config["num_epochs"]):
         model.train()
         for batch in (pbar:=tqdm(train_dataloader, desc=f"Epoch {epoch}", disable=not accelerator.is_main_process)):
-            outputs = model(**batch)
-            loss = outputs.loss
-            accelerator.backward(loss)
-            
-            optimizer.step()
-            optimizer.zero_grad()
-            pbar.set_postfix({'loss': loss.item()})
+            with accelerator.accumulate(model):
+                outputs = model(**batch)
+                loss = outputs.loss
+                accelerator.backward(loss)
+
+                optimizer.step()
+                optimizer.zero_grad()
+                
+                pbar.set_postfix({'loss': loss.item()})
 
         # Evaluate at the end of the epoch (distributed evaluation as we have 8 TPU cores)
         model.eval()

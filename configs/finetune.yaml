@@ -4,25 +4,26 @@ model_name_or_path: "databricks/dolly-v2-3b"
 output_dir: "./results"
 
 # optimizer config
-lr: 2.0e-5
-weight_decay: 1.0e-4
+lr: 5.0e-5
+weight_decay: 0.0
 
 # training config
 load_8bit: false
-num_epochs: 5
-patience: 5
+num_epochs: 2
+patience: 2
 seed: 42
+gradient_accumulation_steps: 2
 gradient_checkpointing: true
 
 # data config
-data_path: ".json"
-max_length: 768
+data_path: "mini_instruction_data.json"
+max_length: 512
 train_batch_size: 4
 eval_batch_size: 4
 test_size: 0.2
 
 # LoRA config
 lora: True
-lora_r: 4
-lora_alpha: 16
-lora_dropout: 0.05
+lora_r: 8
+lora_alpha: 32
+lora_dropout: 0.1
