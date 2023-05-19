@@ -1,7 +1,5 @@
 import torch
 import argparse
-import datasets
-import transformers
 import numpy as np
 import logging
 from tqdm import tqdm
@@ -40,81 +38,13 @@ logger.handlers = []  # No duplicated handlers
 logger.propagate = False  # workaround for duplicated logs in ipython
 logger.addHandler(ch)
 
-def train(model, optimizer, train_dataloader, eval_dataloader, config):
-    # Initialize accelerator
-    accelerator = Accelerator()
-    accelerator.print(f"Using {accelerator.num_processes} GPUs")
-    # To have only one message (and not 8) per logs of Transformers or Datasets, we set the logging verbosity
-    # to INFO for the main process only.
-    if accelerator.is_main_process:
-        datasets.utils.logging.set_verbosity_warning()
-        transformers.utils.logging.set_verbosity_info()
-    else:
-        datasets.utils.logging.set_verbosity_error()
-        transformers.utils.logging.set_verbosity_error()
-
-    # The seed need to be set before we instantiate the model, as it will determine the random head.
-    set_seed(config["seed"])
-
-    # There is no specific order to remember, we just need to unpack the objects in the same order we gave them to the
-    # prepare method.
-    model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(
-        model, optimizer, train_dataloader, eval_dataloader
-    )
+def main():
+    parser = argparse.ArgumentParser(description='Training Arguments')
+    parser.add_argument('--config', type=str, default="configs/config.yaml")
+    args = parser.parse_args()
     
-    # Now we train the model
-    epochs_no_improve = 0
-    min_val_loss = 1e9
-    for epoch in range(config["num_epochs"]):
-        # We only enable the progress bar on the main process to avoid having 8 progress bars.
-        progress_bar = tqdm(range(len(train_dataloader)), disable=not accelerator.is_main_process)
-        progress_bar.set_description(f"Epoch: {epoch}")
-        model.train()
-        for batch in train_dataloader:
-            outputs = model(**batch)
-            loss = outputs.loss
-            accelerator.backward(loss)
-            
-            optimizer.step()
-            optimizer.zero_grad()
-            progress_bar.set_postfix({'loss': loss.item()})
-            progress_bar.update(1)
-
-        # Evaluate at the end of the epoch (distributed evaluation as we have 8 TPU cores)
-        model.eval()
-        validation_losses = []
-        for batch in eval_dataloader:
-            with torch.no_grad():
-                outputs = model(**batch)
-            loss = outputs.loss
-
-            # We gather the loss from the 8 TPU cores to have them all.
-            validation_losses.append(accelerator.gather(loss[None]))
-
-        # Compute average validation loss
-        val_loss = torch.stack(validation_losses).sum().item() / len(validation_losses)
-        # Use accelerator.print to print only on the main process.
-        accelerator.print(f"epoch {epoch}: validation loss:", val_loss)
-        if val_loss < min_val_loss:
-            epochs_no_improve = 0
-            min_val_loss = val_loss
-            continue
-        else:
-            epochs_no_improve += 1
-            # Check early stopping condition
-            if epochs_no_improve == config["patience"]:
-                accelerator.print("Early stopping!")
-                break
-
-    # save trained model
-    accelerator.wait_for_everyone()
-    unwrapped_model = accelerator.unwrap_model(model)
-    # Use accelerator.save to save
-    unwrapped_model.save_pretrained(config["output_dir"], save_function=accelerator.save)
-
-def main(config_path):
     # Load the training config file
-    config = read_config(config_path)
+    config = read_config(args.config)
 
     # Load model and tokenizer
     model, tokenizer = get_model_tokenizer(config["model_name_or_path"], 
@@ -166,11 +96,65 @@ def main(config_path):
                                   lr=config["lr"], 
                                   weight_decay=config["weight_decay"])
 
-    train(model=model, optimizer=optimizer, train_dataloader=train_dataloader, 
-          eval_dataloader=eval_dataloader, config=config)
+    # Initialize accelerator
+    accelerator = Accelerator()
+    accelerator.print(f"Using {accelerator.num_processes} GPUs")
+
+    # The seed need to be set before we instantiate the model, as it will determine the random head.
+    set_seed(config["seed"])
+
+    # There is no specific order to remember, we just need to unpack the objects in the same order we gave them to the
+    # prepare method.
+    model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(
+        model, optimizer, train_dataloader, eval_dataloader
+    )
+    
+    # Now we train the model
+    epochs_no_improve = 0
+    min_val_loss = np.inf
+    for epoch in range(config["num_epochs"]):
+        model.train()
+        for batch in (pbar:=tqdm(train_dataloader, desc=f"Epoch {epoch}", disable=not accelerator.is_main_process)):
+            outputs = model(**batch)
+            loss = outputs.loss
+            accelerator.backward(loss)
+            
+            optimizer.step()
+            optimizer.zero_grad()
+            pbar.set_postfix({'loss': loss.item()})
+
+        # Evaluate at the end of the epoch (distributed evaluation as we have 8 TPU cores)
+        model.eval()
+        validation_losses = []
+        for batch in eval_dataloader:
+            with torch.no_grad():
+                outputs = model(**batch)
+            loss = outputs.loss
+
+            # We gather the loss from the 8 TPU cores to have them all.
+            validation_losses.append(accelerator.gather(loss[None]))
+
+        # Compute average validation loss
+        val_loss = torch.stack(validation_losses).sum().item() / len(validation_losses)
+        # Use accelerator.print to print only on the main process.
+        accelerator.print(f"epoch {epoch}: validation loss:", val_loss)
+        if val_loss < min_val_loss:
+            epochs_no_improve = 0
+            min_val_loss = val_loss
+            continue
+        else:
+            epochs_no_improve += 1
+            # Check early stopping condition
+            if epochs_no_improve == config["patience"]:
+                accelerator.print("Early stopping!")
+                break
+
+    # save trained model
+    accelerator.wait_for_everyone()
+    unwrapped_model = accelerator.unwrap_model(model)
+    # Use accelerator.save to save
+    unwrapped_model.save_pretrained(config["output_dir"], save_function=accelerator.save)
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Training Arguments')
-    parser.add_argument('--config', type=str, default="configs/config.yaml")
-    args = parser.parse_args()
-    main(args.config)
+    main()
