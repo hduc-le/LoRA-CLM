@@ -8,8 +8,9 @@ model:
 # optimizer config
 optim:
   lr: 2.0e-5
+  min_lr: 0
   weight_decay: 0.0
-
+  warmup_steps: 100
 # training config
 train:
   seed: 42

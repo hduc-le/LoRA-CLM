@@ -10,7 +10,7 @@ from accelerate import Accelerator
 from colorlog import ColoredFormatter
 from utils.read import read_config, get_model_tokenizer
 from utils.data import generate_prompt, print_trainable_parameters
-from transformers import DataCollatorForLanguageModeling, set_seed
+from transformers import DataCollatorForLanguageModeling, set_seed, get_scheduler
 from torch.utils.data import DataLoader
 from peft import LoraConfig, get_peft_model
 
@@ -40,14 +40,7 @@ logger.handlers = []  # No duplicated handlers
 logger.propagate = False  # workaround for duplicated logs in ipython
 logger.addHandler(ch)
 
-def main():
-    parser = argparse.ArgumentParser(description='Training Arguments')
-    parser.add_argument('--config', type=str, default="configs/config.yaml")
-    args = parser.parse_args()
-    
-    # Load the training config file
-    config = read_config(args.config)
-
+def train(config):
     # Load model and tokenizer
     model, tokenizer = get_model_tokenizer(config["model"]["name"], 
                                            load_in_8bit=config["model"]["load_in_8bit"], 
@@ -99,6 +92,21 @@ def main():
                                   lr=config["optim"]["lr"] * accelerator.num_processes, 
                                   weight_decay=config["optim"]["weight_decay"])
     
+    # decay to min_lr instead of 0
+    lr_ratio = config["optim"]["min_lr"] / config["optim"]["lr"]
+    accelerator.print(f"Len of train_dataloader: {len(train_dataloader)}")
+    total_num_steps = (len(train_dataloader) / config["train"]["gradient_accumulation_steps"]) * config["train"]["num_epochs"]
+    # instead of decaying to zero, decay to ratio of min_lr / lr
+    total_num_steps += int(total_num_steps * lr_ratio) + config["optim"]["warmup_steps"]
+    accelerator.print(f"Total training steps: {total_num_steps}")
+
+    scheduler = get_scheduler(
+            name="cosine",
+            optimizer=optimizer,
+            num_warmup_steps=config["warmup_steps"] * accelerator.num_processes,
+            num_training_steps=total_num_steps,
+        )
+    
     # To have only one message (and not 8) per logs of Transformers or Datasets, we set the logging verbosity
     # to INFO for the main process only.
     if accelerator.is_main_process:
@@ -113,8 +121,8 @@ def main():
 
     # There is no specific order to remember, we just need to unpack the objects in the same order we gave them to the
     # prepare method.
-    model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(
-        model, optimizer, train_dataloader, eval_dataloader
+    model, optimizer, scheduler, train_dataloader, eval_dataloader = accelerator.prepare(
+        model, optimizer, scheduler, train_dataloader, eval_dataloader
     )
     
     # Now we train the model
@@ -129,6 +137,7 @@ def main():
                 accelerator.backward(loss)
 
                 optimizer.step()
+                scheduler.step()
                 optimizer.zero_grad()
                 
                 pbar.set_postfix({"loss": loss.item()})
@@ -191,4 +200,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description='Training Arguments')
+    parser.add_argument('--config', type=str, default="configs/finetune.yaml")
+    args = parser.parse_args()
+    
+    # Load the training config file
+    config = read_config(args.config)
+    train(config)
