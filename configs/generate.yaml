@@ -2,7 +2,7 @@ model_config:
   model_name: "databricks/dolly-v2-3b"
   tokenizer_name: "databricks/dolly-v2-3b"
   lora: true
-  lora_path: "hduc-le/legal-dolly-v2-lora-3b"
+  lora_path: "path/to/lora/model"
 
 generate_config:
   do_sample: true
