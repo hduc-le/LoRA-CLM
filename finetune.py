@@ -82,11 +82,13 @@ def train(config):
 
     train_dataloader = DataLoader(split_dataset["train"], 
                                   batch_size=config["data"]["train_batch_size"], 
-                                  collate_fn=data_collator)
+                                  collate_fn=data_collator,
+                                  shuffle=True)
     
     eval_dataloader = DataLoader(split_dataset["test"], 
                                  batch_size=config["data"]["eval_batch_size"], 
-                                 collate_fn=data_collator)
+                                 collate_fn=data_collator,
+                                 shuffle=False)
 
     optimizer = torch.optim.AdamW(model.parameters(), 
                                   lr=config["optim"]["lr"] * accelerator.num_processes, 
