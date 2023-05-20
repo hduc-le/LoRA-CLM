@@ -122,7 +122,7 @@ def main():
     min_val_loss = np.inf
     for epoch in range(config["train"]["num_epochs"]):
         model.train()
-        for batch in (pbar:=tqdm(train_dataloader, desc=f"Epoch {epoch}", disable=not accelerator.is_main_process)):
+        for batch in (pbar:=tqdm(train_dataloader, desc=f"Epoch {epoch} - training", disable=not accelerator.is_main_process)):
             with accelerator.accumulate(model):
                 outputs = model(**batch)
                 loss = outputs.loss
@@ -131,16 +131,16 @@ def main():
                 optimizer.step()
                 optimizer.zero_grad()
                 
-                pbar.set_postfix({'loss': loss.item()})
+                pbar.set_postfix({"loss": loss.item()})
 
         # Evaluate at the end of the epoch (distributed evaluation as we have 8 TPU cores)
         model.eval()
         validation_losses = []
-        for batch in eval_dataloader:
+        for batch in (pbar:=tqdm(eval_dataloader, desc="Epoch {epoch} - validation", disable=not accelerator.is_main_process)):
             with torch.no_grad():
                 outputs = model(**batch)
             loss = outputs.loss
-
+            pbar.set_postfix({"loss": loss.item()})
             # We gather the loss from the 8 TPU cores to have them all.
             validation_losses.append(accelerator.gather(loss[None]))
 
