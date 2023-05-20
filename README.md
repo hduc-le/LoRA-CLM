@@ -27,8 +27,8 @@ accelerate launch finetune.py --config configs/finetune.yaml
 ### Text Generation
 Configure `configs/generate.yaml` then execute the following command:
 ```bash
-python generate.py --config configs/generate.yaml\
-                   --prompt "enter your instruction here!!!"
+CUDA_VISIBLE_DEVICES=0 python generate.py --config configs/generate.yaml\
+                                          --prompt "enter your instruction here!!!"
 ```
 
 ## Web Application
