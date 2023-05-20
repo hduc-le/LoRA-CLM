@@ -50,7 +50,7 @@ def main():
 
     # Load model and tokenizer
     model, tokenizer = get_model_tokenizer(config["model"]["name"], 
-                                           load_in_8bit=config["model"]["load_8bit"], 
+                                           load_in_8bit=config["model"]["load_in_8bit"], 
                                            gradient_checkpointing=config["train"]["gradient_checkpointing"])
     # LoRA fine tune
     if config["lora"]["active"]:
