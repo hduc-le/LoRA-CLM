@@ -162,32 +162,31 @@ def train(config):
         if val_loss < min_val_loss:
             epochs_no_improve = 0
             min_val_loss = val_loss
-            continue
+            
+            accelerator.print(f"Epoch {epoch} finished")
+            accelerator.print(f"Pushing to HF hub")
+            accelerator.wait_for_everyone()
+            unwrapped_model = accelerator.unwrap_model(model)
+            try:
+                if accelerator.is_main_process:
+                    unwrapped_model.push_to_hub(config["model"]["save_name"] + f"-epoch_{epoch}", private=True)
+
+            except Exception as e:
+                accelerator.print(e)
+                accelerator.print(f"Failed to push to hub")
+
+            unwrapped_model.save_pretrained(
+                f"{config['model']['output_dir']}/epoch_{epoch}",
+                is_main_process=accelerator.is_main_process,
+                save_function=accelerator.save,
+                state_dict=accelerator.get_state_dict(model),
+            )
         else:
             epochs_no_improve += 1
             # Check early stopping condition
             if epochs_no_improve == config["train"]["patience"]:
                 accelerator.print("Early stopping!")
                 break
-
-        accelerator.print(f"Epoch {epoch} finished")
-        accelerator.print(f"Pushing to HF hub")
-        accelerator.wait_for_everyone()
-        unwrapped_model = accelerator.unwrap_model(model)
-        try:
-            if accelerator.is_main_process:
-                unwrapped_model.push_to_hub(config["model"]["save_name"] + f"-epoch_{epoch}", private=True)
-
-        except Exception as e:
-            accelerator.print(e)
-            accelerator.print(f"Failed to push to hub")
-
-        unwrapped_model.save_pretrained(
-            f"{config['model']['output_dir']}/epoch_{epoch}",
-            is_main_process=accelerator.is_main_process,
-            save_function=accelerator.save,
-            state_dict=accelerator.get_state_dict(model),
-        )
 
     # save trained model
     accelerator.wait_for_everyone()
