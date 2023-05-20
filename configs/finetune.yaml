@@ -1,29 +1,34 @@
 # model config
-save_name: "lora-dolly-v2-3b"
-model_name_or_path: "databricks/dolly-v2-3b"
-output_dir: "./results"
-load_8bit: false
+model:
+  name: "databricks/dolly-v2-3b"
+  output_dir: "saved-runs"
+  load_in_8bit: false
+  save_name: "lora-dolly-v2-3b"
 
 # optimizer config
-lr: 5.0e-5
-weight_decay: 0.0
+optim:
+  lr: 2.0e-5
+  weight_decay: 0.0
 
 # training config
-seed: 42
-num_epochs: 2
-patience: 2
-gradient_accumulation_steps: 2
-gradient_checkpointing: true
+train:
+  seed: 42
+  num_epochs: 3
+  patience: 2
+  gradient_accumulation_steps: 4
+  gradient_checkpointing: true
 
 # data config
-data_path: "mini_instruction_data.json"
-max_length: 512
-train_batch_size: 4
-eval_batch_size: 4
-test_size: 0.2
+data:
+  path: "instruction_data.json"
+  max_length: 512
+  train_batch_size: 4
+  eval_batch_size: 4
+  test_size: 0.2
 
 # LoRA config
-lora: True
-lora_r: 8
-lora_alpha: 32
-lora_dropout: 0.1
+lora:
+  active: True
+  r: 8
+  alpha: 32
+  dropout: 0.1

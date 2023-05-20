@@ -49,16 +49,16 @@ def main():
     config = read_config(args.config)
 
     # Load model and tokenizer
-    model, tokenizer = get_model_tokenizer(config["model_name_or_path"], 
-                                           load_in_8bit=config["load_8bit"], 
-                                           gradient_checkpointing=config["gradient_checkpointing"])
+    model, tokenizer = get_model_tokenizer(config["model"]["name"], 
+                                           load_in_8bit=config["model"]["load_8bit"], 
+                                           gradient_checkpointing=config["train"]["gradient_checkpointing"])
     # LoRA fine tune
-    if config["lora"]:
+    if config["lora"]["active"]:
         # Peft model
-        peft_config = LoraConfig(r=config["lora_r"],
+        peft_config = LoraConfig(r=config["lora"]["r"],
                                  inference_mode=False,
-                                 lora_alpha=config["lora_alpha"],
-                                 lora_dropout=config["lora_dropout"],
+                                 lora_alpha=config["lora"]["alpha"],
+                                 lora_dropout=config["lora"]["dropout"],
                                  bias="none",
                                  task_type="CAUSAL_LM")
         
@@ -68,36 +68,36 @@ def main():
     logger.info(f"Mem needed: {model.get_memory_footprint() / 1024 / 1024 / 1024:.2f} GB")
 
     # Load datasetimport numpy as np
-    data = load_dataset("json", data_files=config["data_path"], split="train")
+    data = load_dataset("json", data_files=config["data"]["path"], split="train")
     data = data.shuffle().map(
         lambda data_point: tokenizer(
             generate_prompt(data_point),
             truncation=True,
-            max_length=config["max_length"],
+            max_length=config["data"]["max_length"],
             padding="max_length",
         ),
         remove_columns=["instruction", "input", "response"]
     )
     # 90% train, 10% test + validation
-    split_dataset = data.train_test_split(test_size=config["test_size"], seed=config["seed"])
+    split_dataset = data.train_test_split(test_size=config["data"]["test_size"], seed=config["train"]["seed"])
     
     # Initialize accelerator
-    accelerator = Accelerator(gradient_accumulation_steps=config["gradient_accumulation_steps"])
+    accelerator = Accelerator(gradient_accumulation_steps=config["train"]["gradient_accumulation_steps"])
     accelerator.print(f"Using {accelerator.num_processes} GPUs")
     
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
     train_dataloader = DataLoader(split_dataset["train"], 
-                                  batch_size=config["train_batch_size"], 
+                                  batch_size=config["data"]["train_batch_size"], 
                                   collate_fn=data_collator)
     
     eval_dataloader = DataLoader(split_dataset["test"], 
-                                 batch_size=config["eval_batch_size"], 
+                                 batch_size=config["data"]["eval_batch_size"], 
                                  collate_fn=data_collator)
 
     optimizer = torch.optim.AdamW(model.parameters(), 
-                                  lr=config["lr"] * accelerator.num_processes, 
-                                  weight_decay=config["weight_decay"])
+                                  lr=config["optim"]["lr"] * accelerator.num_processes, 
+                                  weight_decay=config["optim"]["weight_decay"])
     
     # To have only one message (and not 8) per logs of Transformers or Datasets, we set the logging verbosity
     # to INFO for the main process only.
@@ -109,7 +109,7 @@ def main():
         transformers.utils.logging.set_verbosity_error()
         
     # The seed need to be set before we instantiate the model, as it will determine the random head.
-    set_seed(config["seed"])
+    set_seed(config["train"]["seed"])
 
     # There is no specific order to remember, we just need to unpack the objects in the same order we gave them to the
     # prepare method.
@@ -120,7 +120,7 @@ def main():
     # Now we train the model
     epochs_no_improve = 0
     min_val_loss = np.inf
-    for epoch in range(config["num_epochs"]):
+    for epoch in range(config["train"]["num_epochs"]):
         model.train()
         for batch in (pbar:=tqdm(train_dataloader, desc=f"Epoch {epoch}", disable=not accelerator.is_main_process)):
             with accelerator.accumulate(model):
@@ -155,7 +155,7 @@ def main():
         else:
             epochs_no_improve += 1
             # Check early stopping condition
-            if epochs_no_improve == config["patience"]:
+            if epochs_no_improve == config["train"]["patience"]:
                 accelerator.print("Early stopping!")
                 break
 
@@ -165,14 +165,14 @@ def main():
         unwrapped_model = accelerator.unwrap_model(model)
         try:
             if accelerator.is_main_process:
-                unwrapped_model.push_to_hub(config["save_name"] + f"-epoch_{epoch}", private=True)
+                unwrapped_model.push_to_hub(config["model"]["save_name"] + f"-epoch_{epoch}", private=True)
 
         except Exception as e:
             accelerator.print(e)
             accelerator.print(f"Failed to push to hub")
 
         unwrapped_model.save_pretrained(
-            f"{config['output_dir']}/epoch_{epoch}",
+            f"{config['model']['output_dir']}/epoch_{epoch}",
             is_main_process=accelerator.is_main_process,
             save_function=accelerator.save,
             state_dict=accelerator.get_state_dict(model),
@@ -183,7 +183,7 @@ def main():
     unwrapped_model = accelerator.unwrap_model(model)
     # Use accelerator.save to save
     unwrapped_model.save_pretrained(
-        f"{config['output_dir']}/final",
+        f"{config['model']['output_dir']}/final",
         is_main_process=accelerator.is_main_process,
         save_function=accelerator.save,
         state_dict=accelerator.get_state_dict(model),
