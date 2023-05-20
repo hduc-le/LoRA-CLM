@@ -11,8 +11,8 @@ from colorlog import ColoredFormatter
 from utils.read import read_config, get_model_tokenizer
 from utils.data import generate_prompt, print_trainable_parameters
 from transformers import DataCollatorForLanguageModeling, set_seed
-from torch.utils.data import RandomSampler, SequentialSampler, DataLoader
-from peft import LoraConfig, get_peft_model, prepare_model_for_int8_training
+from torch.utils.data import DataLoader
+from peft import LoraConfig, get_peft_model
 
 ch = logging.StreamHandler()
 ch.setLevel(logging.DEBUG)
@@ -159,11 +159,35 @@ def main():
                 accelerator.print("Early stopping!")
                 break
 
+        accelerator.print(f"Epoch {epoch} finished")
+        accelerator.print(f"Pushing to HF hub")
+        accelerator.wait_for_everyone()
+        unwrapped_model = accelerator.unwrap_model(model)
+        try:
+            if accelerator.is_main_process:
+                unwrapped_model.push_to_hub(config["save_name"] + f"-epoch_{epoch}", private=True)
+
+        except Exception as e:
+            accelerator.print(e)
+            accelerator.print(f"Failed to push to hub")
+
+        unwrapped_model.save_pretrained(
+            f"{config['output_dir']}/epoch_{epoch}",
+            is_main_process=accelerator.is_main_process,
+            save_function=accelerator.save,
+            state_dict=accelerator.get_state_dict(model),
+        )
+
     # save trained model
     accelerator.wait_for_everyone()
     unwrapped_model = accelerator.unwrap_model(model)
     # Use accelerator.save to save
-    unwrapped_model.save_pretrained(config["output_dir"], save_function=accelerator.save)
+    unwrapped_model.save_pretrained(
+        f"{config['output_dir']}/final",
+        is_main_process=accelerator.is_main_process,
+        save_function=accelerator.save,
+        state_dict=accelerator.get_state_dict(model),
+    )
 
 
 if __name__ == "__main__":
