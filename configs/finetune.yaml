@@ -1,17 +1,15 @@
-# model config
 model:
   name: "databricks/dolly-v2-3b"
   output_dir: "saved-runs"
   load_in_8bit: false
-  save_name: "lora-dolly-v2-3b"
+  save_name: "--- SET NAME OF THE FINE-TUNED MODEL ---"
 
-# optimizer config
 optim:
   lr: 2.0e-5
   min_lr: 0
   weight_decay: 0.0
   warmup_steps: 100
-# training config
+
 train:
   seed: 42
   num_epochs: 3
@@ -19,15 +17,13 @@ train:
   gradient_accumulation_steps: 4
   gradient_checkpointing: true
 
-# data config
 data:
-  path: "instruction_data.json"
+  path: "--- SET THE NAME OF DATASET ---.json"
   max_length: 512
   train_batch_size: 4
   eval_batch_size: 4
   test_size: 0.2
 
-# LoRA config
 lora:
   active: True
   r: 8
