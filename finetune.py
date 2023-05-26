@@ -211,7 +211,7 @@ def train(config):
         for batch in (
             pbar := tqdm(
                 eval_dataloader,
-                desc="Epoch {epoch} - Validation",
+                desc=f"Epoch {epoch} - Validation",
                 disable=not accelerator.is_main_process,
             )
         ):
