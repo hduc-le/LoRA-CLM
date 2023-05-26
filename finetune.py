@@ -239,6 +239,9 @@ def train(config):
                     unwrapped_model.push_to_hub(
                         config["model"]["save_name"] + f"-epoch_{epoch}", private=True
                     )
+                    tokenizer.push_to_hub(
+                        config["model"]["save_name"] + f"-epoch_{epoch}", private=True
+                    )
 
             except Exception as e:
                 accelerator.print(e)
