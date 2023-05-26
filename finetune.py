@@ -1,3 +1,4 @@
+import os
 import torch
 import argparse
 import numpy as np
@@ -77,7 +78,8 @@ def train(config):
             max_length=config["data"]["max_length"],
             padding="max_length",
         ),
-        remove_columns=["instruction", "input", "response"],
+        num_proc=os.cpu_count(),
+        remove_columns=["instruction", "input", "output"],
     )
     # 90% train, 10% test + validation
     split_dataset = data.train_test_split(

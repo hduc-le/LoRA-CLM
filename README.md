@@ -9,7 +9,7 @@ pip install -r requirements.txt
 ```
 
 ## Usage
-Before training, you need to specify some configuration in `configs/finetune.yaml`, it will be loaded internally when executing `finetune.py`. 
+Before training, you need to specify some configuration in `configs/train/finetune.yaml`, it will be loaded internally when executing `finetune.py`. 
 
 ### Fine tuning with PyTorch + Accelerate framework
 To fine-tune with `Accelerate` framework, follow the steps:
@@ -21,13 +21,13 @@ accelerate config
 
 2. Perform fine-tuning.
 ```bash
-accelerate launch finetune.py --config configs/finetune.yaml
+accelerate launch finetune.py --config configs/train/finetune.yaml
 ```
 
 ### Text Generation
-Configure `configs/generate.yaml` then execute the following command:
+Configure `configs/generate/generate.yaml` then execute the following command:
 ```bash
-CUDA_VISIBLE_DEVICES=0 python generate.py --config configs/generate.yaml\
+CUDA_VISIBLE_DEVICES=0 python generate.py --config configs/generate/generate.yaml\
                                           --prompt "enter your instruction here!!!"
 ```
 

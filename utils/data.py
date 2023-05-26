@@ -57,24 +57,21 @@ def print_trainable_parameters(model):
         f"trainable params: {trainable_params} || all params: {all_param} || trainable%: {100 * trainable_params / all_param}"
     )
 
+from .consts import (
+    CONCLUDING_QUESTION_PREFIX, 
+    PROMPT_WITH_INPUT_FORMAT, 
+    PROMPT_NO_INPUT_FORMAT
+)
+
 def generate_prompt(data_point):
-    # taken from https://github.com/tloen/alpaca-lora
-    if "#### Question conclude:" in data_point["instruction"]:
-        return f"""Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.
-
-### Instruction:
-{data_point["instruction"]}
-
-### Let's think it step by step:
-{data_point["input"]}
-
-### Response:
-{data_point["response"]}"""
+    if CONCLUDING_QUESTION_PREFIX in data_point["input"]:
+        return PROMPT_WITH_INPUT_FORMAT.format(
+            instruction=data_point["instruction"],
+            input=data_point["input"],
+            response=data_point["output"],
+        )
     else:
-        return f"""Below is an instruction that describes a task. Write a response that appropriately completes the request.
-
-### Instruction:
-{data_point["input"]}
-
-### Response:
-{data_point["response"]}"""
+        return PROMPT_NO_INPUT_FORMAT.format(
+            instruction=data_point["input"],
+            response=data_point["output"]
+        )
