@@ -24,6 +24,12 @@ logger = get_logger(__name__, log_level="DEBUG")
 torch.backends.cuda.matmul.allow_tf32 = True
 
 def train(config):
+    # Initialize accelerator
+    accelerator = Accelerator(
+        gradient_accumulation_steps=config["train"]["gradient_accumulation_steps"]
+    )
+    logger.info(f"Using {accelerator.num_processes} GPUs", main_process_only=True)
+    
     # Load model and tokenizer
     model, tokenizer = get_model_tokenizer(
         config["model"]["name"],
@@ -71,12 +77,6 @@ def train(config):
     split_dataset = data.train_test_split(
         test_size=config["data"]["test_size"], seed=config["train"]["seed"]
     )
-
-    # Initialize accelerator
-    accelerator = Accelerator(
-        gradient_accumulation_steps=config["train"]["gradient_accumulation_steps"]
-    )
-    logger.info(f"Using {accelerator.num_processes} GPUs", main_process_only=True)
 
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
