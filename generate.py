@@ -2,7 +2,7 @@ import torch
 from argparse import ArgumentParser
 from utils.read import read_config
 from termcolor import colored
-from utils.consts import RESPONSE_KEY_NL
+from utils.consts import RESPONSE_KEY_NL, QUESTION_PREFIX, CONTEXT_PREFIX
 from pipeline import generate_response, setup_model_for_generation
 
 if __name__ == "__main__":
@@ -21,7 +21,7 @@ if __name__ == "__main__":
     response = generate_response(
         model=model,
         tokenizer=tokenizer,
-        instruction=args.prompt + " " + RESPONSE_KEY_NL,
+        instruction=CONTEXT_PREFIX + "\n" + args.prompt + "\n" + RESPONSE_KEY_NL,
         **config["generate_config"]
     )
 
