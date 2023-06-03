@@ -2,7 +2,7 @@ model:
   name: "databricks/dolly-v2-3b"
   output_dir: "saved-runs"
   load_in_8bit: false
-  save_name: "--- SET NAME OF THE FINE-TUNED MODEL ---"
+  save_name: "finetuned-dolly-v2-3b"
 
 optim:
   lr: 2.0e-5
@@ -13,12 +13,13 @@ optim:
 train:
   seed: 42
   num_epochs: 3
-  patience: 2
+  patience: 3
   gradient_accumulation_steps: 4
   gradient_checkpointing: true
+  push_to_hub: false
 
 data:
-  path: "--- SET THE NAME OF DATASET ---.json"
+  path: "data-name.json"
   max_length: 512
   train_batch_size: 4
   eval_batch_size: 4
@@ -26,6 +27,7 @@ data:
 
 lora:
   active: True
+  pretrained_path: null
   r: 8
   alpha: 32
   dropout: 0.1
