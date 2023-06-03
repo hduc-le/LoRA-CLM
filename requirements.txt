@@ -3,6 +3,7 @@ transformers
 datasets 
 loralib
 torchmetrics
+scipy
 sentencepiece
 peft
 bitsandbytes
