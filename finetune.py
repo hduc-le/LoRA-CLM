@@ -29,7 +29,7 @@ def train(config):
         gradient_accumulation_steps=config["train"]["gradient_accumulation_steps"]
     )
     logger.info(f"Using {accelerator.num_processes} GPUs", main_process_only=True)
-    
+
     # Load model and tokenizer
     model, tokenizer = get_model_tokenizer(
         config["model"]["name"],
@@ -159,7 +159,7 @@ def train(config):
                 scheduler.step()
                 optimizer.zero_grad()
 
-            pbar.set_postfix({"loss": loss_values["loss"]})
+            pbar.set_postfix({"loss": loss_values["loss"].item()})
 
         # Evaluate at the end of the epoch (distributed evaluation as we have all GPU cores)
         model.eval()
@@ -172,7 +172,7 @@ def train(config):
 
                 val_loss.update(loss_values["loss"])
 
-                pbar.set_postfix({"loss": loss_values["loss"]})
+                pbar.set_postfix({"loss": loss_values["loss"].item()})
 
         # Compute average train and validation loss
         log_items = {
