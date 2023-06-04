@@ -27,7 +27,7 @@ data:
 
 lora:
   active: True
-  pretrained_path: null
+  ckpt_path: null
   r: 8
   alpha: 32
   dropout: 0.1

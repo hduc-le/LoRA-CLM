@@ -18,17 +18,44 @@ from accelerate.utils import set_seed
 from peft.utils.other import fsdp_auto_wrap_policy
 from peft import LoraConfig, get_peft_model, TaskType, PeftModel
 
-from accelerate.logging import get_logger
-logger = get_logger(__name__, log_level="DEBUG")
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+
+formatter = ColoredFormatter(
+    "%(log_color)s[%(asctime)s] %(message)s",
+    datefmt=None,
+    reset=True,
+    log_colors={
+        "DEBUG": "cyan",
+        "INFO": "green,bold",
+        "INFOV": "cyan,bold",
+        "WARNING": "yellow",
+        "ERROR": "red,bold",
+        "CRITICAL": "red,bg_white",
+    },
+    secondary_log_colors={},
+    style="%",
+)
+ch.setFormatter(formatter)
+
+logger = logging.getLogger("rn")
+logger.setLevel(logging.DEBUG)
+logger.handlers = []  # No duplicated handlers
+logger.propagate = False  # workaround for duplicated logs in ipython
+logger.addHandler(ch)
 
 torch.backends.cuda.matmul.allow_tf32 = True
 
+
 def train(config):
+    # The seed need to be set before we instantiate the model, as it will determine the random head.
+    set_seed(config["train"]["seed"])
+
     # Initialize accelerator
     accelerator = Accelerator(
         gradient_accumulation_steps=config["train"]["gradient_accumulation_steps"]
     )
-    logger.info(f"Using {accelerator.num_processes} GPUs", main_process_only=True)
+    logger.info(f"Using {accelerator.num_processes} GPUs")
 
     # Load model and tokenizer
     model, tokenizer = get_model_tokenizer(
@@ -38,9 +65,10 @@ def train(config):
     )
     # LoRA fine tune
     if config["lora"]["active"]:
-        if config["lora"]["pretrained_path"]:
-            model = PeftModel.from_pretrained(model, config["lora"]["pretrained_path"], is_trainable=True)
-
+        if config["lora"]["ckpt_path"]:
+            model = PeftModel.from_pretrained(
+                model, config["lora"]["ckpt_path"], is_trainable=True
+            )
         else:
             peft_config = LoraConfig(
                 r=config["lora"]["r"],
@@ -52,8 +80,10 @@ def train(config):
             )
             model = get_peft_model(model, peft_config)
         print_trainable_parameters(model)
-    
-    logger.info(f"Mem needed: {model.get_memory_footprint() / 1024 / 1024 / 1024:.2f} GB", main_process_only=True)
+
+    logger.info(
+        f"Mem needed: {model.get_memory_footprint() / 1024 / 1024 / 1024:.2f} GB"
+    )
 
     # FSDP plugin with accelerate
     if getattr(accelerator.state, "fsdp_plugin", None) is not None:
@@ -61,7 +91,7 @@ def train(config):
     # When using FSDP, it is efficient and recommended to call prepare for the model before creating the optimizer
     model = accelerator.prepare(model)
 
-    # Load datasetimport numpy as np
+    # Load dataset
     data = load_dataset("json", data_files=config["data"]["path"], split="train")
     data = data.shuffle().map(
         lambda data_point: tokenizer(
@@ -71,41 +101,30 @@ def train(config):
             padding="max_length",
         ),
         num_proc=os.cpu_count(),
-        remove_columns=["instruction", "input", "output"],
+        remove_columns=data["train"].column_names,
     )
-    # 90% train, 10% test + validation
+    # split data
     split_dataset = data.train_test_split(
         test_size=config["data"]["test_size"], seed=config["train"]["seed"]
     )
 
+    # Data Loaders
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
-    train_dataloader = DataLoader(
-        split_dataset["train"],
-        batch_size=config["data"]["train_batch_size"],
-        collate_fn=data_collator,
-        shuffle=True,
-    )
+    train_dataloader = DataLoader(split_dataset["train"], batch_size=config["data"]["train_batch_size"], collate_fn=data_collator, shuffle=True)
 
-    eval_dataloader = DataLoader(
-        split_dataset["test"],
-        batch_size=config["data"]["eval_batch_size"],
-        collate_fn=data_collator,
-        shuffle=False,
-    )
+    eval_dataloader = DataLoader(split_dataset["test"], batch_size=config["data"]["eval_batch_size"], collate_fn=data_collator, shuffle=False)
 
-    optimizer = AdamW(
-        model.parameters(),
-        lr=config["optim"]["lr"],
-        weight_decay=config["optim"]["weight_decay"],
-    )
+    optimizer = AdamW(model.parameters(), lr=config["optim"]["lr"], weight_decay=config["optim"]["weight_decay"])
 
     gradient_accumulation_steps = config["train"]["gradient_accumulation_steps"]
 
     # decay to min_lr instead of 0
     lr_ratio = config["optim"]["min_lr"] / config["optim"]["lr"]
     accelerator.print(f"Len of train_dataloader: {len(train_dataloader)}")
-    total_num_steps = (len(train_dataloader) / gradient_accumulation_steps) * config["train"]["num_epochs"]
+    total_num_steps = (len(train_dataloader) / gradient_accumulation_steps) * config[
+        "train"
+    ]["num_epochs"]
     # instead of decaying to zero, decay to ratio of min_lr / lr
     total_num_steps += int(total_num_steps * lr_ratio) + config["optim"]["warmup_steps"]
     accelerator.print(f"Total training steps: {total_num_steps}")
@@ -113,8 +132,7 @@ def train(config):
     scheduler = get_scheduler(
         name="cosine",
         optimizer=optimizer,
-        num_warmup_steps=config["optim"]["warmup_steps"]
-        * accelerator.num_processes,
+        num_warmup_steps=config["optim"]["warmup_steps"] * accelerator.num_processes,
         num_training_steps=total_num_steps,
     )
 
@@ -127,9 +145,6 @@ def train(config):
         datasets.utils.logging.set_verbosity_error()
         transformers.utils.logging.set_verbosity_error()
 
-    # The seed need to be set before we instantiate the model, as it will determine the random head.
-    set_seed(config["train"]["seed"])
-
     # There is no specific order to remember, we just need to unpack the objects in the same order we gave them to the
     # prepare method.
     optimizer, scheduler, train_dataloader, eval_dataloader = accelerator.prepare(
@@ -141,13 +156,15 @@ def train(config):
     min_val_loss = np.inf
     for epoch in range(config["train"]["num_epochs"]):
         train_loss = MeanMetric(nan_strategy="error").to(model.device)
-        for step, batch in enumerate((pbar := tqdm(train_dataloader, desc=f"Epoch {epoch} - Training", disable=not accelerator.is_main_process))):
+        for step, batch in enumerate(pbar := tqdm(train_dataloader, desc=f"Epoch {epoch} - Training", disable=not accelerator.is_main_process)):
             model.train()
             outputs = model(**batch)
             loss = outputs.loss
 
             # gather loss before backprop in case of gradient accumulation
-            loss_values = accelerator.gather_for_metrics({"loss": loss.detach().float()})
+            loss_values = accelerator.gather_for_metrics(
+                {"loss": loss.detach().float()}
+            )
             train_loss.update(loss_values["loss"])
 
             # Gradient accumulation and backprop
@@ -165,7 +182,7 @@ def train(config):
         model.eval()
         val_loss = MeanMetric(nan_strategy="error").to(model.device)
         with torch.no_grad():
-            for batch in (pbar := tqdm(eval_dataloader, desc=f"Epoch {epoch} - Validation", disable=not accelerator.is_main_process)):
+            for batch in (pbar := tqdm(eval_dataloader,desc=f"Epoch {epoch} - Validation", disable=not accelerator.is_main_process)):
                 loss = model(**batch).loss
 
                 loss_values = accelerator.gather_for_metrics({"loss": loss.detach()})
@@ -175,13 +192,12 @@ def train(config):
                 pbar.set_postfix({"loss": loss_values["loss"].item()})
 
         # Compute average train and validation loss
-        log_items = {
-            "train_loss": train_loss.compute(),
-            "val_loss": val_loss.compute()
-        }
+        log_items = {"train_loss": train_loss.compute(), "val_loss": val_loss.compute()}
 
         # Use accelerator.print to print only on the main process.
-        accelerator.print(f"Summary epoch {epoch}: train loss: {log_items['train_loss']} || validation loss: {log_items['val_loss']}")
+        accelerator.print(
+            f"Summary epoch {epoch}: train loss: {log_items['train_loss'].item()} || validation loss: {log_items['val_loss'].item()}"
+        )
 
         if val_loss < min_val_loss:
             epochs_no_improve = 0
@@ -194,10 +210,10 @@ def train(config):
             try:
                 if accelerator.is_main_process:
                     unwrapped_model.push_to_hub(
-                        config["model"]["save_name"] + f"-epoch_{epoch}", private=True
+                        config["model"]["save_name"] + f"-epoch-{epoch}", private=True
                     )
                     tokenizer.push_to_hub(
-                        config["model"]["save_name"] + f"-epoch_{epoch}", private=True
+                        config["model"]["save_name"] + f"-epoch-{epoch}", private=True
                     )
 
             except Exception as e:
@@ -220,8 +236,8 @@ def train(config):
         train_loss.reset()
 
     save_dir = f"{config['model']['output_dir']}/final"
-    logger.info("Training finished.", main_process_only=True)
-    logger.info(f"Unpacking and saving the final checkpoint at {save_dir}", main_process_only=True)
+    logger.info("Training finished.")
+    logger.info(f"Unpacking and saving the final checkpoint at {save_dir}")
 
     # save trained model
     accelerator.wait_for_everyone()
@@ -234,6 +250,7 @@ def train(config):
         state_dict=accelerator.get_state_dict(model),
     )
     accelerator.print("Done.")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Training Arguments")
