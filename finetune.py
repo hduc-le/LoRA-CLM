@@ -7,12 +7,13 @@ import datasets
 import transformers
 from torchmetrics import MeanMetric
 from tqdm import tqdm
+from torch.optim import AdamW
 from datasets import load_dataset
 from accelerate import Accelerator
 from colorlog import ColoredFormatter
 from utils.read import read_config, get_model_tokenizer
 from utils.data import generate_prompt, print_trainable_parameters
-from transformers import DataCollatorForLanguageModeling, set_seed, get_scheduler, AdamW
+from transformers import DataCollatorForLanguageModeling, set_seed, get_scheduler
 from torch.utils.data import DataLoader
 from accelerate.utils import set_seed
 from peft.utils.other import fsdp_auto_wrap_policy
@@ -101,7 +102,7 @@ def train(config):
             padding="max_length",
         ),
         num_proc=os.cpu_count(),
-        remove_columns=data["train"].column_names,
+        remove_columns=data.column_names,
     )
     # split data
     split_dataset = data.train_test_split(
@@ -179,6 +180,9 @@ def train(config):
             outputs = model(**batch)
             loss = outputs.loss
 
+            # progress bar
+            pbar.set_postfix({"loss": loss.item()})
+            
             # gather loss before backprop in case of gradient accumulation
             loss_values = accelerator.gather_for_metrics(
                 {"loss": loss.detach().float()}
@@ -194,8 +198,6 @@ def train(config):
                 scheduler.step()
                 optimizer.zero_grad()
 
-            pbar.set_postfix({"loss": loss_values["loss"].item()})
-
         # Evaluate at the end of the epoch (distributed evaluation as we have all GPU cores)
         model.eval()
         val_loss = MeanMetric(nan_strategy="error").to(model.device)
@@ -209,11 +211,11 @@ def train(config):
             ):
                 loss = model(**batch).loss
 
+                pbar.set_postfix({"loss": loss.item()})
+                
                 loss_values = accelerator.gather_for_metrics({"loss": loss.detach()})
 
                 val_loss.update(loss_values["loss"])
-
-                pbar.set_postfix({"loss": loss_values["loss"].item()})
 
         # Compute average train and validation loss
         log_items = {"train_loss": train_loss.compute(), "val_loss": val_loss.compute()}
@@ -245,7 +247,7 @@ def train(config):
                 accelerator.print(f"Failed to push to hub")
 
             unwrapped_model.save_pretrained(
-                f"{config['model']['output_dir']}/epoch_{epoch}",
+                f"{config['model']['output_dir']}/epoch-{epoch}",
                 is_main_process=accelerator.is_main_process,
                 save_function=accelerator.save,
                 state_dict=accelerator.get_state_dict(model),
