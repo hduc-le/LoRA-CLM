@@ -111,20 +111,32 @@ def train(config):
     # Data Loaders
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
-    train_dataloader = DataLoader(split_dataset["train"], batch_size=config["data"]["train_batch_size"], collate_fn=data_collator, shuffle=True)
+    train_dataloader = DataLoader(
+        split_dataset["train"],
+        batch_size=config["data"]["train_batch_size"],
+        collate_fn=data_collator,
+        shuffle=True,
+    )
 
-    eval_dataloader = DataLoader(split_dataset["test"], batch_size=config["data"]["eval_batch_size"], collate_fn=data_collator, shuffle=False)
+    eval_dataloader = DataLoader(
+        split_dataset["test"],
+        batch_size=config["data"]["eval_batch_size"],
+        collate_fn=data_collator,
+        shuffle=False,
+    )
 
-    optimizer = AdamW(model.parameters(), lr=config["optim"]["lr"], weight_decay=config["optim"]["weight_decay"])
+    optimizer = AdamW(
+        model.parameters(),
+        lr=config["optim"]["lr"],
+        weight_decay=config["optim"]["weight_decay"],
+    )
 
     gradient_accumulation_steps = config["train"]["gradient_accumulation_steps"]
 
     # decay to min_lr instead of 0
     lr_ratio = config["optim"]["min_lr"] / config["optim"]["lr"]
     accelerator.print(f"Len of train_dataloader: {len(train_dataloader)}")
-    total_num_steps = (len(train_dataloader) / gradient_accumulation_steps) * config[
-        "train"
-    ]["num_epochs"]
+    total_num_steps = (len(train_dataloader) / gradient_accumulation_steps) * config["train"]["num_epochs"]
     # instead of decaying to zero, decay to ratio of min_lr / lr
     total_num_steps += int(total_num_steps * lr_ratio) + config["optim"]["warmup_steps"]
     accelerator.print(f"Total training steps: {total_num_steps}")
@@ -156,7 +168,13 @@ def train(config):
     min_val_loss = np.inf
     for epoch in range(config["train"]["num_epochs"]):
         train_loss = MeanMetric(nan_strategy="error").to(model.device)
-        for step, batch in enumerate(pbar := tqdm(train_dataloader, desc=f"Epoch {epoch} - Training", disable=not accelerator.is_main_process)):
+        for step, batch in enumerate(
+            pbar := tqdm(
+                train_dataloader,
+                desc=f"Epoch {epoch} - Training",
+                disable=not accelerator.is_main_process,
+            )
+        ):
             model.train()
             outputs = model(**batch)
             loss = outputs.loss
@@ -182,7 +200,13 @@ def train(config):
         model.eval()
         val_loss = MeanMetric(nan_strategy="error").to(model.device)
         with torch.no_grad():
-            for batch in (pbar := tqdm(eval_dataloader,desc=f"Epoch {epoch} - Validation", disable=not accelerator.is_main_process)):
+            for batch in (
+                pbar := tqdm(
+                    eval_dataloader,
+                    desc=f"Epoch {epoch} - Validation",
+                    disable=not accelerator.is_main_process,
+                )
+            ):
                 loss = model(**batch).loss
 
                 loss_values = accelerator.gather_for_metrics({"loss": loss.detach()})
