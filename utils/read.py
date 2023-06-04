@@ -34,7 +34,7 @@ def load_model(
         pretrained_model_name_or_path,
         trust_remote_code=True,
         use_cache=False if gradient_checkpointing else True,
-        torch_dtype=torch.bfloat16,
+        torch_dtype=torch.float16,
         load_in_8bit=load_in_8bit,
         device_map="auto" if load_in_8bit else None
     )
@@ -44,9 +44,9 @@ def load_peft_model(pretrained_model_name_or_path: str, **kwargs) -> PeftModel:
     peft_config = PeftConfig.from_pretrained(pretrained_model_name_or_path)
     base_model = load_model(peft_config.base_model_name_or_path, **kwargs)
     peft_model = PeftModelForCausalLM.from_pretrained(
-        base_model, pretrained_model_name_or_path, torch_dtype=torch.bfloat16
+        base_model, pretrained_model_name_or_path, torch_dtype=torch.float16
     )
-    peft_model.to(dtype=torch.bfloat16)
+    peft_model.to(dtype=torch.float16)
     return peft_model
 
 def get_model_tokenizer(
