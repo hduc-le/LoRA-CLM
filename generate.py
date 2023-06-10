@@ -1,6 +1,6 @@
 import torch
 from argparse import ArgumentParser
-from utils.read import read_config
+from utils.load import read_config
 from termcolor import colored
 from utils.consts import RESPONSE_KEY_NL, QUESTION_PREFIX, CONTEXT_PREFIX
 from pipeline import generate_response, setup_model_for_generation

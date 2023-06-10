@@ -4,7 +4,7 @@ import sys
 import torch
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline import setup_model_for_generation, generate_response
-from utils.read import read_config
+from utils.load import read_config
 from utils.consts import RESPONSE_KEY
 from flask import Flask, render_template, request, redirect, jsonify
  

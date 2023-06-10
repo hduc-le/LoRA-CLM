@@ -11,7 +11,7 @@ from torch.optim import AdamW
 from datasets import load_dataset
 from accelerate import Accelerator
 from colorlog import ColoredFormatter
-from utils.read import read_config, get_model_tokenizer
+from utils.load import read_config, get_model_tokenizer
 from utils.data import generate_prompt, print_trainable_parameters
 from transformers import DataCollatorForLanguageModeling, set_seed, get_scheduler
 from torch.utils.data import DataLoader
