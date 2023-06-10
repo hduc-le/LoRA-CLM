@@ -11,14 +11,6 @@ INTRO_BLURB = (
     "Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request."
 )
 
-# This is the prompt prefix that are used for training instruction legal model
-QUESTION_PREFIX = "[Chủ đề]"
-CONTEXT_PREFIX = "[Câu hỏi]"
-KEY_QUESTION_PREFIX = "[Câu hỏi pháp lý then chốt]"
-KEY_EVENT_PREFIX = "[Sự kiện chính]"
-CONCLUDING_QUESTION_PREFIX="[Câu hỏi pháp lý kết luận]"
-DEPENDENT_QUESTION_PREFIX="[Câu hỏi pháp lý phụ thuộc]"
-
 # This is the prompt that is used for generating responses using an already trained model.  It ends with the response
 # key, where the job of the model is to provide the completion that follows it (i.e. the response itself).
 PROMPT_FOR_GENERATION_FORMAT = """{intro}
